@@ -11,11 +11,16 @@ export LOGDIR="${RUN_DIR}/logs"
 export CPU_LOG_FILE="${LOGDIR}/cpu_job.log"
 export GPU_LOG_FILE="${LOGDIR}/gpu_job.log"
 
-export DIFFUSION_BASE="/storage/group/u1o/alphafold/vvm5242"
-export DIFFUSION_MODELS="${DIFFUSION_BASE}/RFdiffusion/models"
-export DIFFUSION_SCHEDULES="${DIFFUSION_BASE}/RFdiffusion/schedules"
-export DIFFUSION_SIF="${DIFFUSION_BASE}/rfdiffusion.sif"
-export DIFFUSION_PARAMS="contigmap.contigs=[100-100] ppi.hotspot_res='' scaffoldguided.scaffoldguided=False"
+# ── Shared base path ─────────────────────────────────────────────────────
+export CONTAINER_BASE="/storage/group/aimi/alphafold/vvm5242/ProtDesignTemp"
 
-# Add design mode to status reporting
-export STATUS_UPDATE="Design Mode: <%= context.design_mode.titleize %> | Designs: ${NUM_DESIGNS} | Steps: ${TIMESTEPS}"
+# ── RFdiffusion paths ─────────────────────────────────────────────────────
+# Models are BAKED INTO the container (Python site-packages) — no separate model dir needed
+# Pulled via: singularity pull --arch amd64 library://rfdiffusion/repo/rfdiffusion:amd64
+export DIFFUSION_SIF="${CONTAINER_BASE}/rfdiffusion_x86.sif"
+
+# ── BoltzGen paths ────────────────────────────────────────────────────────
+# Models downloaded separately into boltzgen_models/ bound at runtime to /models
+# Pulled via: singularity pull library://boltzgen/default/boltzgen_x86:latest
+export BOLTZ_SIF="${CONTAINER_BASE}/boltzgen_x86.sif"
+export BOLTZ_MODEL_DIR="${CONTAINER_BASE}/boltzgen_models"

@@ -1,126 +1,226 @@
-# RFdiffusion Open OnDemand Application
+# Protein Design Suite — Open OnDemand Application
 
-## Description
-Web interface for protein design using RFdiffusion on HPC clusters. Enables:
-- De novo protein generation
-- Motif scaffolding
-- Binder design
-- Symmetric oligomer generation
-- Partial diffusion workflows
+A unified web interface for GPU-accelerated protein design on HPC clusters, supporting two complementary tools: **RFdiffusion** for diffusion-based de novo design and **BoltzGen** for universal binder design.
 
-## Features
+---
 
-### Core Capabilities
-- **Five Design Modes**:
-  - **Binder Design**: Create protein binders with specified interfaces
-  - **Motif Scaffolding**: Scaffold functional motifs into stable structures
-  - **Partial Diffusion**: Controlled generation with adjustable noise steps
-  - **Unconditional Generation**: Fully automated protein design
-  - **Symmetric Design**: Generate symmetric protein assemblies
+## Supported Tools
 
-### Advanced Functionality
-- **Hotspot Residue Specification**: Paint key interaction residues
-- **Fold Conditioning**: Guide generation with structural constraints
-- **Auxiliary Potentials**: Incorporate energy-based guidance
-- **Inpainting**: Combine sequence/structure constraints
-- **Flexible Peptide Handling**: Design with dynamic binding partners
+### RFdiffusion
+Diffusion-based protein design from the Baker Lab (University of Washington). Generates novel protein structures from scratch or guided by structural constraints.
+
+**Design Modes:**
+| Mode | Description |
+|------|-------------|
+| **Binder Design** | Design a protein/peptide to bind a target protein via hotspot residues |
+| **Motif Scaffolding** | Embed a functional motif (e.g., active site) into a stable new scaffold |
+| **Partial Diffusion** | Add controlled diversity to an existing structure |
+| **Unconditional Generation** | Generate novel proteins of a specified length with no constraints |
+| **Symmetric Design** | Design homo-oligomers with cyclic (C2–C6), dihedral (D2/D3), or higher symmetry |
+
+**Key Parameters (auto-handled by the form):**
+- `contigmap.contigs` — structural constraint map
+- `ppi.hotspot_res` — target residues to drive binding
+- `denoiser.noise_scale_ca / frame` — quality vs. diversity trade-off
+- `diffuser.partial_T` — noise level for partial diffusion
+- `inference.symmetry` — oligomer symmetry type
+- `inference.ckpt_override_path` — select Active Site model for sparse motifs
+
+---
+
+### BoltzGen
+Universal binder design from the Stark Lab. Runs a full design pipeline: backbone diffusion → inverse folding → refolding → analysis → filtering.
+
+**Protocols:**
+| Protocol | Description |
+|----------|-------------|
+| **protein-anything** | Design a protein binder to bind a target protein or peptide |
+| **peptide-anything** | Design a cyclic or linear peptide binder |
+| **protein-small_molecule** | Design a protein to bind a small molecule (CCD or SMILES) |
+| **nanobody-anything** | Design nanobody CDRs against a target |
+| **antibody-anything** | Design antibody CDRs against a target |
+| **protein-redesign** | Redesign or optimize residues in an existing protein structure |
+
+**Key Parameters:**
+- `--protocol` — design protocol (see above)
+- `--num_designs` — intermediate designs to generate (50 to test; 10,000–60,000 for production)
+- `--budget` — final diversity-optimized set size
+- `--steps` — run specific pipeline steps only (e.g., re-run filtering)
+- `--reuse` — resume an interrupted run
+
+**Pipeline Steps (in order):**
+1. `design` — backbone diffusion
+2. `inverse_folding` — sequence design onto backbone
+3. `folding` — re-fold with target (Boltz-2)
+4. `design_folding` — re-fold binder alone (protein protocols)
+5. `affinity` — binding affinity prediction (small molecule protocols)
+6. `analysis` — compute quality metrics
+7. `filtering` — rank and select final designs
+
+---
 
 ## System Requirements
 
-### Hardware
-- NVIDIA GPU (A100/V100 recommended)
-- 60GB+ GPU memory
-- 100GB+ temporary storage
+| Requirement | RFdiffusion | BoltzGen |
+|-------------|------------|----------|
+| GPU | NVIDIA A100/V100 | NVIDIA A100 (recommended) |
+| GPU Memory | 40GB+ | 40GB+ |
+| RAM | 60GB | 64GB |
+| Temp Storage | 50GB+ | 100GB+ (models ~6GB) |
+| Container | `rfdiffusion_x86.sif` | `boltzgen_x86.sif` |
+| Container Runtime | Singularity / Apptainer | Singularity / Apptainer |
 
-### Software
-- Singularity 3.7+
-- CUDA 11.6
-- Python 3.9
-- SE(3)-Transformer
+---
 
-## Installation
+## Container Setup
 
-1. **Clone Repository**:
-```bash
-git clone https://github.com/EpiGenomicsCode/RFDiffusion-OOD.git
-cd RFDiffusion-OOD
+Both containers are stored at:
 ```
-2. **Retrieve Singularity Container From ICDS**:
-```bash
-rsync -avP path/torfdiffusion_container.sif .
+/storage/group/aimi/alphafold/vvm5242/ProtDesignTemp/
+├── rfdiffusion_x86.sif    # RFdiffusion (models baked in)
+├── boltzgen_x86.sif       # BoltzGen runtime
+└── boltzgen_models/       # BoltzGen weights (~6GB, downloaded separately)
 ```
 
-## Usage
+### Pulling containers from Sylabs
 
-### Web Interface
-1. Access Open OnDemand portal
-2. Navigate to "RFdiffusion Protein Design"
-3. Configure parameters:
-   - **Design Mode**: Select workflow type
-   - **Input Structure**: Upload PDB (if required)
-   - **Design Parameters**:
-     - Number of designs (1-100)
-     - Diffusion timesteps (20-200)
-     - Symmetry type (if applicable)
-     - Potential guidance (optional)
-
-4. Submit job through interactive form
-
-### Command Line Options
-Example scaffolded binder design:
 ```bash
-./scripts/run_inference.py \
-  inference.input_pdb=input.pdb \
-  inference.output_prefix=outputs/binder_design \
-  scaffoldguided.scaffoldguided=True \
-  'ppi.hotspot_res=[A59,A83,A91]' \
-  inference.num_designs=10 \
-  denoiser.noise_scale_ca=0
+# RFdiffusion — models are baked into the image
+singularity pull --arch amd64 rfdiffusion_x86.sif \
+    library://rfdiffusion/repo/rfdiffusion:amd64
+
+# BoltzGen
+singularity pull boltzgen_x86.sif \
+    library://boltzgen/default/boltzgen_x86:latest
 ```
 
-Common parameters:
-- `contigmap.contigs`: Structural constraints
-- `potentials.guiding_potentials`: Energy guidance
-- `symmetry.symmetry_type`: Assembly symmetry
-- `partial_diffusion.partial_T`: Noise steps
+### Downloading BoltzGen model weights
+
+```bash
+mkdir -p boltzgen_models
+singularity exec --cleanenv --no-home \
+    -B ./boltzgen_models:/models \
+    --env HF_HOME=/models --env HOME=/tmp \
+    boltzgen_x86.sif boltzgen download all
+```
+
+Container definitions and build scripts are in `ProteinDesign-Containers/`.
+
+---
+
+## Usage — Web Interface
+
+1. Access the Open OnDemand portal
+2. Navigate to **"Protein Design Suite"**
+3. Select **Application**: RFdiffusion or BoltzGen
+4. Fill in the mode/protocol-specific fields (the form shows only relevant options)
+5. Submit — the job runs on a GPU node via SLURM
+
+### RFdiffusion — example binder design
+
+The form builds the correct Hydra overrides automatically. Equivalent CLI:
+```bash
+singularity exec --cleanenv --nv \
+  --bind inputs:/inputs --bind outputs:/outputs \
+  --bind schedules:/app/RFdiffusion/schedules \
+  rfdiffusion_x86.sif \
+  python3.9 /app/RFdiffusion/scripts/run_inference.py \
+    inference.input_pdb=/inputs/target.pdb \
+    inference.output_prefix=/outputs/design \
+    inference.num_designs=10 \
+    'contigmap.contigs=[A1-150/0 70-100]' \
+    'ppi.hotspot_res=[A59,A83,A91]' \
+    denoiser.noise_scale_ca=0 \
+    denoiser.noise_scale_frame=0
+```
+
+### BoltzGen — example protein binder
+
+The form generates the design YAML and builds the command automatically. Equivalent CLI:
+```bash
+# design_spec.yaml
+# entities:
+#   - protein: {id: B, sequence: 70..100}
+#   - file: {path: target.pdb, include: [{chain: {id: A}}],
+#             binding_types: [{chain: {id: A, binding: "59,83,91"}}]}
+
+singularity exec --cleanenv --nv --no-home \
+  -B inputs:/input -B outputs:/output -B models:/models \
+  --env HF_HOME=/models --env HOME=/tmp \
+  boltzgen_x86.sif \
+  boltzgen run /input/design_spec.yaml \
+    --output /output \
+    --protocol protein-anything \
+    --num_designs 100 \
+    --budget 10 \
+    --cache /models
+```
+
+---
 
 ## Output Structure
+
 ```
-working_dir/
-├── inputs/              # Uploaded PDB files
-├── outputs/
-│   ├── designs/         # Generated PDB structures
-│   ├── scores/          # Design metrics
-│   └── visualizations/  # 3D previews
-├── logs/
-│   ├── diffusion.log    # Full process log
-│   └── status.json      # Progress tracking
-└── schedules/           # Diffusion cache
+working_dir/ppTIMESTAMP/
+├── input/
+│   ├── input.pdb              # (RFdiffusion) staged target PDB
+│   ├── design_spec.yaml       # (BoltzGen) generated design specification
+│   ├── target.*               # (BoltzGen) staged target structure
+│   └── *_job.slurm            # submitted SLURM script
+├── structure/                 # all output files
+│   │── *.pdb / *.cif          # (RFdiffusion) generated structures
+│   ├── intermediate_designs/  # (BoltzGen) backbone designs
+│   ├── intermediate_designs_inverse_folded/
+│   ├── final_ranked_designs/  # (BoltzGen) filtered, ranked output
+│   └── ...
+└── logs/
+    ├── diffusion_job.log      # (RFdiffusion)
+    └── boltzgen_job.log       # (BoltzGen)
 ```
 
-## Monitoring
-Real-time tracking includes:
-- Diffusion progress
-- Energy landscape exploration
-- Structural validation metrics
-- Resource utilization
+---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| CUDA OOM | Reduce `num_designs` or use simpler contigs |
-| Invalid PDB | Verify input structure with `pdb-tools` |
-| Symmetry failures | Check symmetry parameters match input |
-| Potential guidance conflicts | Adjust potential weights |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| RFdiffusion: `No such file: /app/RFdiffusion/models` | Old path passed | Do not pass `inference.model_directory_path` — models are in site-packages |
+| RFdiffusion: Hydra config error | Wrong working dir | Ensure `python3.9 /app/RFdiffusion/scripts/run_inference.py` (full path) |
+| BoltzGen: `SIF not found` | Missing container | Pull `boltzgen_x86.sif` and set `BOLTZ_SIF` path |
+| BoltzGen: model download error | Empty `boltzgen_models/` | Run `boltzgen download all` via the SIF |
+| GPU OOM | Too many designs in one batch | Reduce `--diffusion_batch_size` |
+| Job pending indefinitely | No GPU allocation | Verify `auto_accounts` has GPU access |
+| BoltzGen: interrupted run | Network/timeout | Re-submit with **"Resume Previous Run"** checked |
+
+---
+
+## Architecture
+
+```
+form.yml.erb        ← OOD form definition, data-hide-* for dynamic fields
+form.js             ← injects mode/protocol-specific fields, validation
+template/
+  before.sh.erb     ← builds Hydra overrides (RF) or design YAML (BoltzGen)
+  rfdiffusion_env.sh← container paths, run dirs
+  rfdiffusion.sh    ← generates + submits RFdiffusion SLURM job
+  boltzgen.sh       ← generates + submits BoltzGen SLURM job
+```
+
+---
 
 ## License
 MIT License
 
+## Citation
+
+**RFdiffusion:**
+> Watson et al. (2023). De novo design of protein structure and function with RFdiffusion. *Nature*, 620, 1089–1100.
+
+**BoltzGen:**
+> Stark et al. (2025). BoltzGen: Toward Universal Binder Design. *bioRxiv*.
+
 ## Acknowledgements
-- RFdiffusion by Rosetta Commons
-- NVIDIA SE3-Transformer
-- This project is generously funded by Cornell University BRC Epigenomics Core Facility (RRID:SCR_021287), Penn State Institute for Computational and Data Sciences (RRID:SCR_025154) and Penn State University Center for Applications of Artificial Intelligence and Machine Learning to Industry Core Facility (RRID:SCR_022867)
+This project is generously funded by Cornell University BRC Epigenomics Core Facility (RRID:SCR_021287), Penn State Institute for Computational and Data Sciences (RRID:SCR_025154), and Penn State University Center for Applications of Artificial Intelligence and Machine Learning to Industry Core Facility / AIMI (RRID:SCR_022867). Computational support provided by NSF ACCESS through BIO230041.
 
 ## Contact
 - Technical Support: [icds-help@psu.edu](mailto:icds-help@psu.edu)

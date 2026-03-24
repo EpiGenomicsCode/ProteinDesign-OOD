@@ -1,18 +1,39 @@
 #!/bin/bash
+# RFdiffusion binder/scaffolding/etc via Singularity
+# Args: $1=PDB_FILE  $2=WORKINGDIR  $3=ACCOUNT  $4=STATUS_FILE
+#
+# Container notes (rfdiffusion_x86.def):
+#   - Models are in the Python site-packages path (moved during build),
+#     NOT in /app/RFdiffusion/models — do NOT pass inference.model_directory_path
+#   - Schedules must bind to /app/RFdiffusion/schedules (runscript cds there)
+#   - Runscript: cd /app/RFdiffusion && exec python3.9 scripts/run_inference.py "$@"
+
 PDB_FILE=$1
 WORKINGDIR=$2
 ACCOUNT=$3
 STATUS_FILE=$4
 
-#script to run rfdiffusion design
-
-export DIFFUSION_SIF="/storage/group/u1o/alphafold/vvm5242/rfdiffusion.sif"
-export DIFFUSION_LOG_FILE="${LOGDIR}/diffusion_job.log"
-
-# Generate SLURM script for diffusion job
+DIFFUSION_LOG_FILE="${LOGDIR}/diffusion_job.log"
 DIFFUSION_SLURM_SCRIPT="${INPUT_DIR}/diffusion_job.slurm"
-cat <<EOF > "${DIFFUSION_SLURM_SCRIPT}"
+
+# ── Conditional flags ─────────────────────────────────────────────────────
+
+# Symmetry mode requires --config-name symmetry
+CONFIG_NAME_ARG=""
+if [ "${USE_SYMMETRY_CONFIG}" = "1" ]; then
+  CONFIG_NAME_ARG="--config-name symmetry"
+fi
+
+# Only pass input_pdb when we have one (unconditional generation needs no PDB)
+INPUT_PDB_ARG=""
+if [ -n "${PDB_FILE}" ] && [ -f "${PDB_FILE}" ]; then
+  INPUT_PDB_ARG="inference.input_pdb=/inputs/$(basename "${PDB_FILE}")"
+fi
+
+# ── Generate SLURM job script ─────────────────────────────────────────────
+cat > "${DIFFUSION_SLURM_SCRIPT}" << EOF
 #!/bin/bash
+#SBATCH --job-name=rfdiffusion
 #SBATCH --nodes=1
 #SBATCH --ntasks=8
 #SBATCH --mem=60GB
@@ -22,46 +43,26 @@ cat <<EOF > "${DIFFUSION_SLURM_SCRIPT}"
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=${DIFFUSION_LOG_FILE}
 
-singularity exec --nv \\
+# --cleanenv: prevents host Python/conda packages shadowing container's
+# Schedules bind to /app/RFdiffusion/schedules (matches container runscript CWD)
+# No inference.model_directory_path: models live in Python site-packages (baked in at build)
+singularity exec --cleanenv --nv \\
   --bind "${INPUT_DIR}":/inputs \\
   --bind "${STRUCT}":/outputs \\
-  --bind "${DIFFUSION_MODELS}":/app/RFdiffusion/models \\
-  --bind "${DIFFUSION_SCHEDULES}":/schedules \\
-  --bind "/tmp" \\
+  --bind "${RUN_DIR}/schedules":/app/RFdiffusion/schedules \\
   ${DIFFUSION_SIF} \\
   python3.9 /app/RFdiffusion/scripts/run_inference.py \\
-    inference.input_pdb=/inputs/$(basename "${PDB_FILE}") \\
-    inference.output_prefix=/outputs/denovo \\
+    ${CONFIG_NAME_ARG} \\
+    ${INPUT_PDB_ARG} \\
+    inference.output_prefix=/outputs/design \\
+    inference.schedule_directory_path=/app/RFdiffusion/schedules \\
     inference.num_designs=${NUM_DESIGNS} \\
-    inference.timesteps=${TIMESTEPS} \\
     ${DIFFUSION_PARAMS}
 EOF
 
-# Submit job and get ID
+chmod +x "${DIFFUSION_SLURM_SCRIPT}"
+
+# ── Submit ────────────────────────────────────────────────────────────────
 DIFFUSION_JOB_ID=$(sbatch "${DIFFUSION_SLURM_SCRIPT}" | awk '{print $4}')
 export DIFFUSION_JOB_ID
-
-# Add mode-specific parameters
-case "${DESIGN_MODE}" in
-  "binder")
-    export DIFFUSION_PARAMS+=" binder.protein_binder=True "
-    ;;
-  "scaffold")
-    export DIFFUSION_PARAMS+=" scaffoldguided.scaffoldguided=True "
-    ;;
-  "partial") 
-    export DIFFUSION_PARAMS+=" partial_diffusion.partial_T=${TIMESTEPS}/2 "
-    ;;
-  "symmetric")
-    export DIFFUSION_PARAMS+=" symmetry.symmetry_type=${SYMMETRY_TYPE} "
-    ;;
-esac
-
-# Add potentials if enabled
-if [ "${USE_POTENTIALS}" = "1" ]; then
-  export DIFFUSION_PARAMS+=" potentials.guiding_potentials=True "
-fi
-
-# Change file extension to .sh.erb and fix parameter handling
-export DIFFUSION_PARAMS="contigmap.contigs=[100-100] ppi.hotspot_res='' scaffoldguided.scaffoldguided=False ${DIFFUSION_PARAMS}"
-
+echo "RFdiffusion job submitted: ${DIFFUSION_JOB_ID}"

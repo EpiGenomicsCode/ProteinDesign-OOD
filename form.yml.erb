@@ -1,38 +1,85 @@
 ---
-title: "RFdiffusion Protein Design"
-cluster: "rc"
+title: "Protein Design Suite"
+cluster:
+  - rc
+  - 2e
+
 
 form:
-  - session_type
-  - design_mode
+  - app_type
   - auto_accounts
   - working_directory
+  - bc_email_on_started
+  # ── RFdiffusion ──────────────────────────────────────────────────────────
+  - design_mode
   - pdb_structure
   - num_designs
-  - timesteps
-  - bc_email_on_started
+  # ── BoltzGen ─────────────────────────────────────────────────────────────
+  - boltz_protocol
+  - boltz_target_file
+  - boltz_target_chain
+  - boltz_binding_site
+  - boltz_binder_length_min
+  - boltz_binder_length_max
+  - boltz_num_designs
+  - boltz_budget
+  - boltz_small_mol_type
+  - boltz_small_mol_id
+  - boltz_design_mask
+  - boltz_steps
+  - boltz_reuse
 
 attributes:
-  session_type:
-    value: "RFdiffusion"
-    widget: hidden_field
-    cacheable: false
 
-  design_mode:
-    label: "Design Mode"
-    help: "Select the protein design mode"
+  # ── Shared ───────────────────────────────────────────────────────────────
+
+  app_type:
+    label: "Application"
+    help: "Select the protein design tool to use"
     widget: select
     options:
-      - ["Binder Design", "binder"]
-      - ["Motif Scaffolding", "scaffold"]
-      - ["Partial Diffusion", "partial"]
-      - ["Unconditional Generation", "unconditional"]
-      - ["Symmetric Design", "symmetric"]
-    data-dynamic-visibility: true
+      # When RFdiffusion is selected: hide ALL BoltzGen fields
+      - ["RFdiffusion — diffusion-based de novo design", "rfdiffusion",
+         data-hide-boltz-protocol: true,
+         data-hide-boltz-target-file: true,
+         data-hide-boltz-target-chain: true,
+         data-hide-boltz-binding-site: true,
+         data-hide-boltz-binder-length-min: true,
+         data-hide-boltz-binder-length-max: true,
+         data-hide-boltz-num-designs: true,
+         data-hide-boltz-budget: true,
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-steps: true,
+         data-hide-boltz-reuse: true,
+         data-hide-design-mode: false,
+         data-hide-pdb-structure: false,
+         data-hide-num-designs: false]
+      # When BoltzGen is selected: hide ALL RFdiffusion-specific fields;
+      # hide small-mol and design-mask by default (protocol will reveal them)
+      - ["BoltzGen — universal binder design", "boltzgen",
+         data-hide-design-mode: true,
+         data-hide-pdb-structure: true,
+         data-hide-num-designs: true,
+         data-hide-boltz-protocol: false,
+         data-hide-boltz-target-file: false,
+         data-hide-boltz-target-chain: false,
+         data-hide-boltz-binding-site: false,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-num-designs: false,
+         data-hide-boltz-budget: false,
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-steps: false,
+         data-hide-boltz-reuse: false]
+    value: "rfdiffusion"
 
   auto_accounts:
     label: "GPU Account"
-    help: "Account with access to GPU resources required"
+    help: "Account with access to GPU resources (required)"
     required: true
 
   working_directory:
@@ -42,131 +89,180 @@ attributes:
     show_files: false
     value: "/scratch/<%= ENV['USER'] %>"
 
+  bc_email_on_started:
+    label: "Email Notifications"
+    widget: check_box
+    help: "Receive email notifications when the job starts and completes"
+
+  # ── RFdiffusion ──────────────────────────────────────────────────────────
+
+  design_mode:
+    label: "Design Mode"
+    help: "Select the RFdiffusion design mode"
+    widget: select
+    options:
+      - ["Binder Design", "binder",
+         data-hide-pdb-structure: false]
+      - ["Motif Scaffolding", "scaffold",
+         data-hide-pdb-structure: false]
+      - ["Partial Diffusion", "partial",
+         data-hide-pdb-structure: false]
+      - ["Unconditional Generation", "unconditional",
+         data-hide-pdb-structure: true]
+      - ["Symmetric Design", "symmetric",
+         data-hide-pdb-structure: false]
+
   pdb_structure:
-    widget: file_field
-    label: "Input PDB Structure"
-    help: "Required PDB file input for all modes except unconditional generation"
-    data-hide-design-mode: "unconditional"
+    widget: path_selector
+    label: "Target PDB File"
+    help: "Select an existing PDB file from HPC storage"
     required: false
-    data-required-unless-mode: "unconditional"
+    directory: false
+    show_files: true
 
   num_designs:
     widget: number_field
     label: "Number of Designs"
-    help: "Number of designs to generate (1-100)"
+    help: "How many independent protein designs to generate (1–100). Start with 10 to test, scale up for production."
     min: 1
     max: 100
-    value: 1
+    value: 10
     required: true
 
-  timesteps:
-    widget: number_field
-    label: "Timesteps"
-    help: "Number of diffusion timesteps (20-200)"
-    min: 20
-    max: 200
-    value: 100
-    required: true
+  # ── BoltzGen ─────────────────────────────────────────────────────────────
 
-  bc_email_on_started:
-    label: "Email notifications"
-    widget: check_box
-    help: "Receive email notifications when job starts and completes"
-
-  use_potentials:
-    label: "Use Auxiliary Potentials"
-    widget: check_box
-    help: "Enable auxiliary potentials for guided protein design"
-    data-requires-mode: "symmetric,scaffold"
-    data-required-mode: "symmetric,scaffold"
-    data-enable-for: "symmetric,scaffold,binder"
-
-  potential_weights:
-    label: "Potential Weights"
-    widget: struct
-    help: "Configure weights for different potentials"
-    data-show-if: "use_potentials"
-    fields:
-      olig_contacts_intra:
-        label: "Oligomer Intra-Chain Weight"
-        widget: number_field
-        min: 0
-        max: 2
-        step: 0.1
-        value: 1.0
-      olig_contacts_inter:
-        label: "Oligomer Inter-Chain Weight"
-        widget: number_field
-        min: 0
-        max: 2
-        step: 0.1
-        value: 0.1
-
-  noise_scale:
-    label: "Noise Scale"
-    widget: struct
-    help: "Configure noise scales for translations and rotations"
-    fields:
-      ca_scale:
-        label: "Translation (CA) Scale"
-        widget: number_field
-        min: 0
-        max: 1
-        step: 0.1
-        value: 1.0
-      frame_scale:
-        label: "Rotation (Frame) Scale"
-        widget: number_field
-        min: 0
-        max: 1
-        step: 0.1
-        value: 1.0
-
-  fold_conditioning:
-    label: "Enable Fold Conditioning"
-    widget: check_box
-    help: "Use secondary structure and block adjacency conditioning"
-
-  secondary_structure:
-    widget: file_field
-    label: "Secondary Structure File"
-    help: "Upload .pt file for secondary structure conditioning"
-    data-show-if: "fold_conditioning"
-
-  block_adjacency:
-    widget: file_field
-    label: "Block Adjacency File"
-    help: "Upload .pt file for block adjacency conditioning"
-    data-show-if: "fold_conditioning"
-
-  specialized_model:
-    label: "Specialized Model"
+  boltz_protocol:
+    label: "Protocol"
+    help: "Design protocol — determines what molecule type to design and which pipeline steps run"
     widget: select
-    help: "Select a specialized model for specific design tasks"
     options:
-      - ["Default Model", "default"]
-      - ["Active Site Model", "active_site"]
-      - ["Beta Model", "beta"]
+      # Each option explicitly sets show/hide for all protocol-specific sub-fields
+      - ["Protein binder (protein-anything)", "protein-anything",
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-binding-site: false]
+      - ["Peptide / cyclic binder (peptide-anything)", "peptide-anything",
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-binding-site: false]
+      - ["Protein → small molecule (protein-small_molecule)", "protein-small_molecule",
+         data-hide-boltz-small-mol-type: false,
+         data-hide-boltz-small-mol-id: false,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-binding-site: true]
+      - ["Nanobody CDRs (nanobody-anything)", "nanobody-anything",
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-binding-site: false]
+      - ["Antibody CDRs (antibody-anything)", "antibody-anything",
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: true,
+         data-hide-boltz-binder-length-min: false,
+         data-hide-boltz-binder-length-max: false,
+         data-hide-boltz-binding-site: false]
+      - ["Protein redesign / optimization (protein-redesign)", "protein-redesign",
+         data-hide-boltz-small-mol-type: true,
+         data-hide-boltz-small-mol-id: true,
+         data-hide-boltz-design-mask: false,
+         data-hide-boltz-binder-length-min: true,
+         data-hide-boltz-binder-length-max: true,
+         data-hide-boltz-binding-site: true]
 
-  partial_diffusion:
-    widget: struct
-    label: "Partial Diffusion Settings"
-    help: "Configure partial diffusion parameters"
-    data-show-design-mode: "partial"
-    fields:
-      partial_T:
-        label: "Noise Steps"
-        widget: number_field
-        min: 1
-        max: 200
-        value: 50
-        help: "Number of noise steps for partial diffusion"
+  boltz_target_file:
+    widget: path_selector
+    label: "Target Structure File"
+    help: "PDB or mmCIF file of the target protein. For protein-small_molecule this is optional (the target is the ligand)."
+    required: false
+    directory: false
+    show_files: true
 
-  protein_sequence:
-    label: "Protein Sequence"
-    widget: text_area
-    help: "Input sequence for unconditional generation (e.g. ACDEFGHIKLMNPQRSTVWY)"
-    rows: 3
-    data-show-design-mode: "unconditional"
-    placeholder: "Enter amino acid sequence (20+ residues)"
-  
+  boltz_target_chain:
+    widget: text_field
+    label: "Target Chain ID"
+    help: "Chain ID(s) in the target file to include (e.g. A). Leave blank to include all chains."
+    placeholder: "e.g. A"
+
+  boltz_binding_site:
+    widget: text_field
+    label: "Binding Site Residues (optional)"
+    help: "Residue indices on the target chain that the design should bind. Uses label_seq_id numbering starting at 1 (e.g. 343,344,251 or 10..30). Leave blank to bind anywhere."
+    placeholder: "e.g. 343,344,251"
+
+  boltz_binder_length_min:
+    widget: number_field
+    label: "Binder Min Length (residues)"
+    help: "Minimum number of residues in the designed binder"
+    min: 5
+    max: 500
+    value: 50
+
+  boltz_binder_length_max:
+    widget: number_field
+    label: "Binder Max Length (residues)"
+    help: "Maximum number of residues in the designed binder"
+    min: 5
+    max: 500
+    value: 100
+
+  boltz_num_designs:
+    widget: number_field
+    label: "Number of Intermediate Designs"
+    help: "Intermediate designs to generate before filtering (50 to test, 10 000–60 000 for production)"
+    min: 1
+    max: 100000
+    value: 100
+
+  boltz_budget:
+    widget: number_field
+    label: "Final Design Budget"
+    help: "Number of designs in the final diversity-optimized output set"
+    min: 1
+    max: 1000
+    value: 10
+
+  boltz_small_mol_type:
+    label: "Small Molecule ID Type"
+    help: "How the small molecule target is specified"
+    widget: select
+    options:
+      - ["CCD code (e.g. ATP)", "ccd"]
+      - ["SMILES string", "smiles"]
+
+  boltz_small_mol_id:
+    widget: text_field
+    label: "Small Molecule Identifier"
+    help: "CCD code (e.g. ATP) or SMILES string of the target ligand"
+    placeholder: "e.g. ATP"
+
+  boltz_design_mask:
+    widget: text_field
+    label: "Residues to Redesign"
+    help: "For protein-redesign: label_seq_id residue indices to redesign on the target chain (e.g. 14..19,25). Leave blank to redesign the entire chain."
+    placeholder: "e.g. 14..19,25"
+
+  boltz_steps:
+    label: "Pipeline Steps"
+    help: "Which BoltzGen pipeline steps to run"
+    widget: select
+    options:
+      - ["Full pipeline — design → inverse folding → folding → analysis → filtering", "all"]
+      - ["Design + inverse folding only", "design inverse_folding"]
+      - ["Design only", "design"]
+      - ["Rerun filtering on existing output", "filtering"]
+
+  boltz_reuse:
+    label: "Resume Previous Run"
+    widget: check_box
+    help: "Reuse existing intermediate results so an interrupted run continues without repeating completed steps"

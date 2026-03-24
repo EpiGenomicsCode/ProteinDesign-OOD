@@ -3,51 +3,219 @@
 
 export WORKINGDIR="<%= context.working_directory %>"
 export BC_EMAIL_ON_STARTED="<%= context.bc_email_on_started %>"
-export SESSION_TYPE="<%= context.session_type %>"
+export APP_TYPE="<%= context.app_type %>"
 export CREATED_AT="<%= session.created_at %>"
 
 source "rfdiffusion_env.sh"
 
-mkdir -p "${WORKINGDIR}" "${INPUT_DIR}" "${STRUCT}"
+mkdir -p "${WORKINGDIR}" "${INPUT_DIR}" "${STRUCT}" "${LOGDIR}"
+chmod 755 "${RUN_DIR}"/*
 
 <% if context.bc_email_on_started == "1" %>
-# Add all emails if checked
 scontrol update jobid=$SLURM_JOBID MailType=ALL
 <% end %>
-    
-<%- if context.session_type == "RFdiffusion" -%>
 
-# RFdiffusion
-export PDB_FILE="${INPUT_DIR}/input.pdb"
+# ═══════════════════════════════════════════════════════════════════════════
+# RFdiffusion branch
+# ═══════════════════════════════════════════════════════════════════════════
+<%- if context.app_type == "rfdiffusion" -%>
 
-# Handle input based on design mode
-<% if context.design_mode == 'unconditional' %>
-echo '<%= context.protein_sequence %>' > "${PDB_FILE}"
-<% else %>
-cp "<%= context.pdb_structure.path %>" "${PDB_FILE}"
-<% end %>
-
-echo "Starting RFdiffusion process"
-source ./rfdiffusion.sh "${PDB_FILE}" "$WORKINGDIR" "<%= context.auto_accounts %>" "$STATUS_FILE"
-
-# Set parameters from form context
-export NUM_DESIGNS=<%= context.num_designs %>
-export TIMESTEPS=<%= context.timesteps %>
+mkdir -p "${RUN_DIR}/schedules"
+export NUM_DESIGNS=$((<%= context.num_designs %>))
 export DESIGN_MODE="<%= context.design_mode %>"
+export USE_SYMMETRY_CONFIG="0"
 
-# Set diffusion parameters based on design mode
-<%- case context.design_mode -%>
-<%- when 'binder' -%>
-export DIFFUSION_PARAMS="binder.protein_binder=True"
-<%- when 'scaffold' -%> 
-export DIFFUSION_PARAMS="scaffoldguided.scaffoldguided=True"
-<%- when 'partial' -%>
-export DIFFUSION_PARAMS="partial_diffusion.partial_T=$((<%= context.timesteps %>/2))"
-<%- when 'symmetric' -%>
-export DIFFUSION_PARAMS="symmetry.symmetry_type=<%= context.symmetry_type %>"
-<%- else -%>
-export DIFFUSION_PARAMS="contigmap.contigs=[100-100]"
+# ── Stage input PDB (not needed for unconditional) ────────────────────────
+<%- if context.design_mode != 'unconditional' -%>
+export PDB_FILE="${INPUT_DIR}/input.pdb"
+if [ -f "<%= context.pdb_structure %>" ]; then
+  ln -sf "<%= context.pdb_structure %>" "${PDB_FILE}"
+else
+  echo "ERROR: PDB file not found at: <%= context.pdb_structure %>" >&2
+  exit 1
+fi
 <%- end -%>
 
+# ── Build Hydra overrides per design mode ─────────────────────────────────
+<%- case context.design_mode -%>
+
+<%- when 'binder' -%>
+# Binder Design (PPI)
+# Contig format: [CHAIN_START-END/0 BINDER_MIN-BINDER_MAX]
+# Reference: examples/design_ppi.sh
+TARGET_CHAIN="<%= context.target_chain.to_s.strip.upcase %>"
+TARGET_RANGE="${TARGET_CHAIN}"
+<%- unless context.target_res_range.to_s.strip.empty? -%>
+TARGET_RANGE="${TARGET_CHAIN}<%= context.target_res_range.to_s.strip %>"
+<%- else -%>
+TARGET_RANGE="${TARGET_CHAIN}1-9999"
+<%- end -%>
+CONTIGS="[${TARGET_RANGE}/0 <%= context.binder_length_min %>-<%= context.binder_length_max %>]"
+
+HOTSPOT_PARAM=""
+<%- unless context.hotspot_res.to_s.strip.empty? -%>
+HOTSPOT_PARAM="'ppi.hotspot_res=[<%= context.hotspot_res.to_s.strip %>]'"
+<%- end -%>
+
+NOISE="<%= context.noise_scale.to_s.strip.empty? ? '0' : context.noise_scale.to_s.strip %>"
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' ${HOTSPOT_PARAM} denoiser.noise_scale_ca=${NOISE} denoiser.noise_scale_frame=${NOISE}"
+
+<%- when 'scaffold' -%>
+# Motif Scaffolding
+# Contig format: [NMIN-NMAX/CHAIN_START-END/CMIN-CMAX]
+# Reference: examples/design_motifscaffolding.sh
+MOTIF_CHAIN="<%= context.motif_chain.to_s.strip.upcase %>"
+CONTIGS="[<%= context.nterm_min %>-<%= context.nterm_max %>/${MOTIF_CHAIN}<%= context.motif_res_start %>-<%= context.motif_res_end %>/<%= context.cterm_min %>-<%= context.cterm_max %>]"
+
+CKPT_PARAM=""
+<%- if context.scaffold_model.to_s == 'active_site' -%>
+CKPT_PARAM="inference.ckpt_override_path=/app/RFdiffusion/models/ActiveSite_ckpt.pt"
+<%- end -%>
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' ${CKPT_PARAM}"
+
+<%- when 'partial' -%>
+# Partial Diffusion
+# Contig must equal total input structure length: [LEN-LEN]
+# Reference: examples/design_partialdiffusion.sh
+STRUCT_LEN="<%= context.struct_length.to_s.strip %>"
+CONTIGS="[${STRUCT_LEN}-${STRUCT_LEN}]"
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' diffuser.partial_T=<%= context.partial_T %>"
+
+<%- when 'unconditional' -%>
+# Unconditional Generation — no input PDB
+# Reference: examples/design_unconditional.sh
+export PDB_FILE=""
+CONTIGS="[<%= context.length_min %>-<%= context.length_max %>]"
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}'"
+
+<%- when 'symmetric' -%>
+# Symmetric Oligomers — uses --config-name symmetry
+# Reference: examples/design_cyclic_oligos.sh
+export USE_SYMMETRY_CONFIG="1"
+CONTIGS="[<%= context.sym_total_length %>-<%= context.sym_total_length %>]"
+SYM_TYPE="<%= context.symmetry.to_s.strip %>"
+
+OLIG_PARAM=""
+<%- if context.use_olig_contacts.to_s == '1' -%>
+OLIG_PARAM="'potentials.guiding_potentials=[\"type:olig_contacts,weight_intra:1,weight_inter:0.1\"]' potentials.olig_intra_all=True potentials.olig_inter_all=True potentials.guide_scale=2.0 potentials.guide_decay=quadratic"
+<%- end -%>
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' inference.symmetry=${SYM_TYPE} ${OLIG_PARAM}"
+
+<%- else -%>
+export DIFFUSION_PARAMS="'contigmap.contigs=[100-200]'"
+<%- end -%>
+
+echo "Starting RFdiffusion | mode: ${DESIGN_MODE} | designs: ${NUM_DESIGNS}"
+echo "  contigs/params: ${DIFFUSION_PARAMS}"
+source ./rfdiffusion.sh "${PDB_FILE}" "$WORKINGDIR" "<%= context.auto_accounts %>" "$STATUS_FILE"
+
+<%- end -%>
+
+# ═══════════════════════════════════════════════════════════════════════════
+# BoltzGen branch
+# ═══════════════════════════════════════════════════════════════════════════
+<%- if context.app_type == "boltzgen" -%>
+
+export BOLTZ_PROTOCOL="<%= context.boltz_protocol %>"
+export BOLTZ_NUM_DESIGNS="<%= context.boltz_num_designs %>"
+export BOLTZ_BUDGET="<%= context.boltz_budget %>"
+export BOLTZ_STEPS="<%= context.boltz_steps %>"
+export BOLTZ_REUSE="<%= context.boltz_reuse %>"
+
+# ── Validate SIF ──────────────────────────────────────────────────────────
+if [ ! -f "${BOLTZ_SIF}" ]; then
+  echo "ERROR: BoltzGen Singularity image not found at: ${BOLTZ_SIF}" >&2
+  echo "Please build or pull the image first (see boltzgen/README.md)" >&2
+  exit 1
+fi
+
+# ── Stage target structure file ──────────────────────────────────────────
+<%- unless context.boltz_target_file.to_s.strip.empty? -%>
+BOLTZ_TARGET_SRC="<%= context.boltz_target_file %>"
+BOLTZ_TARGET_EXT="${BOLTZ_TARGET_SRC##*.}"
+BOLTZ_TARGET_DEST="${INPUT_DIR}/target.${BOLTZ_TARGET_EXT}"
+
+if [ -f "${BOLTZ_TARGET_SRC}" ]; then
+  ln -sf "${BOLTZ_TARGET_SRC}" "${BOLTZ_TARGET_DEST}"
+else
+  echo "ERROR: Target structure file not found at: ${BOLTZ_TARGET_SRC}" >&2
+  exit 1
+fi
+<%- end -%>
+
+# ── Generate design specification YAML ───────────────────────────────────
+DESIGN_SPEC="${INPUT_DIR}/design_spec.yaml"
+
+cat > "${DESIGN_SPEC}" << 'BOLTZ_YAML_END'
+entities:
+<%- case context.boltz_protocol -%>
+
+<%- when 'protein-redesign' -%>
+  # Redesign mode: target file provides both structure and design mask
+  - file:
+<%- _tf_ext = (e = File.extname(context.boltz_target_file.to_s).sub(/^\./, '')).empty? ? 'pdb' : e -%>
+      path: /input/target.<%= _tf_ext %>
+<%- unless context.boltz_target_chain.to_s.strip.empty? -%>
+      include:
+        - chain:
+            id: <%= context.boltz_target_chain.strip %>
+<%- end -%>
+<%- unless context.boltz_design_mask.to_s.strip.empty? -%>
+      design:
+        - chain:
+            id: <%= context.boltz_target_chain.to_s.strip.empty? ? 'A' : context.boltz_target_chain.strip %>
+            res_index: <%= context.boltz_design_mask.strip %>
+<%- end -%>
+
+<%- when 'protein-small_molecule' -%>
+  # Designed protein binder
+  - protein:
+      id: B
+      sequence: <%= context.boltz_binder_length_min %>..<%= context.boltz_binder_length_max %>
+<%- unless context.boltz_target_file.to_s.strip.empty? -%>
+  # Target protein context (optional)
+<%- _tf_ext2 = (e2 = File.extname(context.boltz_target_file.to_s).sub(/^\./, '')).empty? ? 'pdb' : e2 -%>
+  - file:
+      path: /input/target.<%= _tf_ext2 %>
+<%- unless context.boltz_target_chain.to_s.strip.empty? -%>
+      include:
+        - chain:
+            id: <%= context.boltz_target_chain.strip %>
+<%- end -%>
+<%- end -%>
+  # Small molecule target
+  - ligand:
+      id: L
+      <%= context.boltz_small_mol_type %>: <%= context.boltz_small_mol_id.strip %>
+
+<%- else -%>
+  # Designed binder (protein/peptide/nanobody/antibody)
+  - protein:
+      id: B
+      sequence: <%= context.boltz_binder_length_min %>..<%= context.boltz_binder_length_max %>
+  # Target structure
+<%- _tf_ext3 = (e3 = File.extname(context.boltz_target_file.to_s).sub(/^\./, '')).empty? ? 'pdb' : e3 -%>
+  - file:
+      path: /input/target.<%= _tf_ext3 %>
+<%- unless context.boltz_target_chain.to_s.strip.empty? -%>
+      include:
+        - chain:
+            id: <%= context.boltz_target_chain.strip %>
+<%- end -%>
+<%- unless context.boltz_binding_site.to_s.strip.empty? -%>
+      binding_types:
+        - chain:
+            id: <%= context.boltz_target_chain.to_s.strip.empty? ? 'A' : context.boltz_target_chain.strip %>
+            binding: <%= context.boltz_binding_site.strip %>
+<%- end -%>
+
+<%- end -%>
+BOLTZ_YAML_END
+
+echo "Generated BoltzGen design spec:"
+cat "${DESIGN_SPEC}"
+
+echo "Starting BoltzGen | protocol: ${BOLTZ_PROTOCOL} | designs: ${BOLTZ_NUM_DESIGNS} | budget: ${BOLTZ_BUDGET}"
+source ./boltzgen.sh "${DESIGN_SPEC}" "$WORKINGDIR" "<%= context.auto_accounts %>" "$STATUS_FILE"
 
 <%- end -%>
