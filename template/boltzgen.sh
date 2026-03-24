@@ -61,6 +61,8 @@ singularity exec --cleanenv --nv --no-home \\
         --cache /models \\
         ${REUSE_FLAG} \\
         ${STEPS_FLAG}
+
+echo "=== Done at \$(date) ==="
 EOF
 
 chmod +x "${BOLTZ_SLURM_SCRIPT}"

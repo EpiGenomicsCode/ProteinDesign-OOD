@@ -62,6 +62,8 @@ singularity exec --cleanenv --nv \\
     inference.schedule_directory_path=/app/RFdiffusion/schedules \\
     inference.num_designs=${NUM_DESIGNS} \\
     ${DIFFUSION_PARAMS}
+
+echo "=== Done at \$(date) ==="
 EOF
 
 chmod +x "${DIFFUSION_SLURM_SCRIPT}"
