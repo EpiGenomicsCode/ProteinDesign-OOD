@@ -74,18 +74,29 @@ Universal binder design from the Stark Lab. Runs a full design pipeline: backbon
 
 ## Container Setup
 
-Both containers are stored at:
+All container definition files, build scripts, and pre-built container instructions are maintained in the **[EpiGenomicsCode/ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)** repository.
+
+Choose a shared directory accessible from all compute nodes (e.g. a group storage path or scratch space) and place both SIF files and the BoltzGen model weights there:
+
 ```
-/storage/group/aimi/alphafold/vvm5242/ProtDesignTemp/
-├── rfdiffusion_x86.sif    # RFdiffusion (models baked in)
+<container_dir>/
+├── rfdiffusion_x86.sif    # RFdiffusion (models baked in at build time)
 ├── boltzgen_x86.sif       # BoltzGen runtime
 └── boltzgen_models/       # BoltzGen weights (~6GB, downloaded separately)
 ```
 
-### Pulling containers from Sylabs
+Update `template/rfdiffusion_env.sh` to point `CONTAINER_BASE` at your chosen directory.
+
+### Option 1 — Pull pre-built containers from Sylabs Cloud (recommended)
 
 ```bash
-# RFdiffusion — models are baked into the image
+cd <container_dir>
+
+# Optionally verify container authenticity first:
+# singularity key import keys/mypublic.pem
+# (keys/mypublic.pem is in the ProteinDesign-Containers repo)
+
+# RFdiffusion — model weights are baked into the image, nothing extra to download
 singularity pull --arch amd64 rfdiffusion_x86.sif \
     library://rfdiffusion/repo/rfdiffusion:amd64
 
@@ -94,17 +105,34 @@ singularity pull boltzgen_x86.sif \
     library://boltzgen/default/boltzgen_x86:latest
 ```
 
-### Downloading BoltzGen model weights
+### Option 2 — Build from definition files
+
+Clone the container repository and use the provided SLURM build script:
 
 ```bash
+git clone https://github.com/EpiGenomicsCode/ProteinDesign-Containers.git
+cd ProteinDesign-Containers
+
+# Edit build_container.slurm to set your partition and account, then:
+sbatch build_container.slurm rfdiffusion x86 <container_dir>
+sbatch build_container.slurm boltzgen    x86 <container_dir>
+```
+
+See the [ProteinDesign-Containers README](https://github.com/EpiGenomicsCode/ProteinDesign-Containers) for full build instructions and troubleshooting.
+
+### Downloading BoltzGen model weights
+
+Run once after the BoltzGen SIF is available:
+
+```bash
+cd <container_dir>
 mkdir -p boltzgen_models
+
 singularity exec --cleanenv --no-home \
     -B ./boltzgen_models:/models \
     --env HF_HOME=/models --env HOME=/tmp \
     boltzgen_x86.sif boltzgen download all
 ```
-
-Container definitions and build scripts are in `ProteinDesign-Containers/`.
 
 ---
 
@@ -123,7 +151,7 @@ The form builds the correct Hydra overrides automatically. Equivalent CLI:
 singularity exec --cleanenv --nv \
   --bind inputs:/inputs --bind outputs:/outputs \
   --bind schedules:/app/RFdiffusion/schedules \
-  rfdiffusion_x86.sif \
+  /path/to/rfdiffusion_x86.sif \
   python3.9 /app/RFdiffusion/scripts/run_inference.py \
     inference.input_pdb=/inputs/target.pdb \
     inference.output_prefix=/outputs/design \
@@ -147,7 +175,7 @@ The form generates the design YAML and builds the command automatically. Equival
 singularity exec --cleanenv --nv --no-home \
   -B inputs:/input -B outputs:/output -B models:/models \
   --env HF_HOME=/models --env HOME=/tmp \
-  boltzgen_x86.sif \
+  /path/to/boltzgen_x86.sif \
   boltzgen run /input/design_spec.yaml \
     --output /output \
     --protocol protein-anything \
@@ -201,10 +229,13 @@ form.yml.erb        ← OOD form definition, data-hide-* for dynamic fields
 form.js             ← injects mode/protocol-specific fields, validation
 template/
   before.sh.erb     ← builds Hydra overrides (RF) or design YAML (BoltzGen)
-  rfdiffusion_env.sh← container paths, run dirs
+  rfdiffusion_env.sh← container paths, run dirs  ← edit CONTAINER_BASE here
   rfdiffusion.sh    ← generates + submits RFdiffusion SLURM job
   boltzgen.sh       ← generates + submits BoltzGen SLURM job
 ```
+
+Container definitions and build tooling:
+**[EpiGenomicsCode/ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)**
 
 ---
 
