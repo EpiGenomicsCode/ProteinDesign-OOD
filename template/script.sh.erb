@@ -131,25 +131,27 @@ monitor_boltz_log() {
             # ("Pipeline step X of 5:") OR the subprocess tqdm prefix
             # ("[Step X/5]") — both appear in the log during a fresh run;
             # only the tqdm prefix appears in a resumed (--reuse) run.
-            grep -qE "Pipeline step 1|\[Step 1/5\]" "$logfile" 2>/dev/null && { step="Step 1/5: Design diffusion";  progress=15; }
-            grep -qE "Pipeline step 2|\[Step 2/5\]" "$logfile" 2>/dev/null && { step="Step 2/5: Inverse folding";   progress=40; details+=("Step 1: Design done"); }
-            grep -qE "Pipeline step 3|\[Step 3/5\]" "$logfile" 2>/dev/null && { step="Step 3/5: Structure folding"; progress=58; details+=("Step 2: Inverse folding done"); }
-            grep -qE "Pipeline step 4|\[Step 4/5\]" "$logfile" 2>/dev/null && { step="Step 4/5: Analysis";          progress=75; details+=("Step 3: Folding done"); }
-            grep -qE "Pipeline step 5|\[Step 5/5\]" "$logfile" 2>/dev/null && { step="Step 5/5: Filtering";         progress=88; details+=("Step 4: Analysis done"); }
+            # Step patterns match [Step X/N] for any N (BoltzGen step count can vary)
+            grep -qE "Pipeline step 1|\[Step 1/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 1: Design diffusion";  progress=15; }
+            grep -qE "Pipeline step 2|\[Step 2/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 2: Inverse folding";   progress=35; details+=("Step 1: Design done"); }
+            grep -qE "Pipeline step 3|\[Step 3/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 3: Structure folding"; progress=55; details+=("Step 2: Inverse folding done"); }
+            grep -qE "Pipeline step 4|\[Step 4/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 4: Analysis";          progress=70; details+=("Step 3: Folding done"); }
+            grep -qE "Pipeline step 5|\[Step 5/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 5: Filtering";         progress=82; details+=("Step 4: Analysis done"); }
+            grep -qE "Pipeline step 6|\[Step 6/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 6: Post-processing";   progress=92; details+=("Step 5: Filtering done"); }
 
             # ── Fine-grained design step sub-progress ───────────────────────
             # While on step 1, parse the tqdm X/TOTAL counter.
-            # Each tqdm line looks like: [Step 1/5] ... | 43/50 [...]
+            # Each tqdm line looks like: [Step 1/6] ... | 11/50 [...]
             # grep -o extracts all X/Y matches; tail -1 gives the latest count.
-            if grep -qE "Pipeline step 1|\[Step 1/5\]" "$logfile" 2>/dev/null && \
-               ! grep -qE "Pipeline step 2|\[Step 2/5\]" "$logfile" 2>/dev/null; then
+            if grep -qE "Pipeline step 1|\[Step 1/[0-9]+\]" "$logfile" 2>/dev/null && \
+               ! grep -qE "Pipeline step 2|\[Step 2/[0-9]+\]" "$logfile" 2>/dev/null; then
                 local done_count total_count
                 done_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f1)
                 total_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f2)
                 if [ -n "$done_count" ] && [ -n "$total_count" ] && [ "$total_count" -gt 0 ]; then
-                    local design_pct=$(( done_count * 25 / total_count ))
+                    local design_pct=$(( done_count * 20 / total_count ))
                     progress=$(( 15 + design_pct ))
-                    step="Step 1/5: Design diffusion (${done_count}/${total_count})"
+                    step="Step 1: Design diffusion (${done_count}/${total_count})"
                 fi
             fi
 

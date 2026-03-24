@@ -14,6 +14,31 @@ form:
   - design_mode
   - pdb_structure
   - num_designs
+  - length_min
+  - length_max
+  # Binder mode fields (UI built by form.js; declared here so context.* works)
+  - binder_length_min
+  - binder_length_max
+  - target_chain
+  - target_res_range
+  - hotspot_res
+  - noise_scale
+  # Scaffold mode fields
+  - motif_chain
+  - nterm_min
+  - nterm_max
+  - motif_res_start
+  - motif_res_end
+  - cterm_min
+  - cterm_max
+  - scaffold_model
+  # Partial diffusion fields
+  - struct_length
+  - partial_T
+  # Symmetric mode fields
+  - sym_total_length
+  - symmetry
+  - use_olig_contacts
   # ── BoltzGen ─────────────────────────────────────────────────────────────
   - boltz_protocol
   - boltz_target_file
@@ -55,13 +80,17 @@ attributes:
          data-hide-boltz-reuse: true,
          data-hide-design-mode: false,
          data-hide-pdb-structure: false,
-         data-hide-num-designs: false]
+         data-hide-num-designs: false,
+         data-hide-length-min: true,
+         data-hide-length-max: true]
       # When BoltzGen is selected: hide ALL RFdiffusion-specific fields;
       # hide small-mol and design-mask by default (protocol will reveal them)
       - ["BoltzGen — universal binder design", "boltzgen",
          data-hide-design-mode: true,
          data-hide-pdb-structure: true,
          data-hide-num-designs: true,
+         data-hide-length-min: true,
+         data-hide-length-max: true,
          data-hide-boltz-protocol: false,
          data-hide-boltz-target-file: false,
          data-hide-boltz-target-chain: false,
@@ -102,15 +131,25 @@ attributes:
     widget: select
     options:
       - ["Binder Design", "binder",
-         data-hide-pdb-structure: false]
+         data-hide-pdb-structure: false,
+         data-hide-length-min: true,
+         data-hide-length-max: true]
       - ["Motif Scaffolding", "scaffold",
-         data-hide-pdb-structure: false]
+         data-hide-pdb-structure: false,
+         data-hide-length-min: true,
+         data-hide-length-max: true]
       - ["Partial Diffusion", "partial",
-         data-hide-pdb-structure: false]
+         data-hide-pdb-structure: false,
+         data-hide-length-min: true,
+         data-hide-length-max: true]
       - ["Unconditional Generation", "unconditional",
-         data-hide-pdb-structure: false]
+         data-hide-pdb-structure: false,
+         data-hide-length-min: false,
+         data-hide-length-max: false]
       - ["Symmetric Design", "symmetric",
-         data-hide-pdb-structure: false]
+         data-hide-pdb-structure: false,
+         data-hide-length-min: true,
+         data-hide-length-max: true]
 
   pdb_structure:
     widget: path_selector
@@ -128,6 +167,102 @@ attributes:
     max: 100
     value: 10
     required: true
+
+  length_min:
+    widget: number_field
+    label: "Min Length (residues)"
+    help: "Minimum length of the de novo generated protein (unconditional mode only)"
+    min: 50
+    max: 500
+    value: 100
+
+  length_max:
+    widget: number_field
+    label: "Max Length (residues)"
+    help: "Maximum length of the de novo generated protein (unconditional mode only)"
+    min: 50
+    max: 500
+    value: 200
+
+  # ── RFdiffusion mode-specific fields (UI injected by form.js) ────────────
+  # Declared here so context.* is available in before.sh.erb.
+  # form.js creates visible inputs with the same names that override these.
+
+  binder_length_min:
+    widget: hidden_field
+    value: "70"
+
+  binder_length_max:
+    widget: hidden_field
+    value: "100"
+
+  target_chain:
+    widget: hidden_field
+    value: "A"
+
+  target_res_range:
+    widget: hidden_field
+    value: ""
+
+  hotspot_res:
+    widget: hidden_field
+    value: ""
+
+  noise_scale:
+    widget: hidden_field
+    value: "1"
+
+  motif_chain:
+    widget: hidden_field
+    value: "A"
+
+  nterm_min:
+    widget: hidden_field
+    value: "10"
+
+  nterm_max:
+    widget: hidden_field
+    value: "40"
+
+  motif_res_start:
+    widget: hidden_field
+    value: "1"
+
+  motif_res_end:
+    widget: hidden_field
+    value: "20"
+
+  cterm_min:
+    widget: hidden_field
+    value: "10"
+
+  cterm_max:
+    widget: hidden_field
+    value: "40"
+
+  scaffold_model:
+    widget: hidden_field
+    value: "base"
+
+  struct_length:
+    widget: hidden_field
+    value: "100"
+
+  partial_T:
+    widget: hidden_field
+    value: "20"
+
+  sym_total_length:
+    widget: hidden_field
+    value: "300"
+
+  symmetry:
+    widget: hidden_field
+    value: "C3"
+
+  use_olig_contacts:
+    widget: hidden_field
+    value: "0"
 
   # ── BoltzGen ─────────────────────────────────────────────────────────────
 

@@ -8,8 +8,6 @@ export STATUS_FILE="status.json"
 export INPUT_DIR="${RUN_DIR}/input"
 export STRUCT="${RUN_DIR}/structure"
 export LOGDIR="${RUN_DIR}/logs"
-export CPU_LOG_FILE="${LOGDIR}/cpu_job.log"
-export GPU_LOG_FILE="${LOGDIR}/gpu_job.log"
 
 # ── Shared base path ─────────────────────────────────────────────────────
 export CONTAINER_BASE="/storage/group/aimi/alphafold/vvm5242/ProtDesignTemp"
