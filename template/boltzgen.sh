@@ -7,8 +7,14 @@ WORKINGDIR=$2
 ACCOUNT=$3
 STATUS_FILE=$4
 
-BOLTZ_LOG_FILE="${LOGDIR}/boltzgen_job.log"
+export BOLTZ_LOG_FILE="${LOGDIR}/boltzgen_job.log"
 BOLTZ_SLURM_SCRIPT="${INPUT_DIR}/boltzgen_job.slurm"
+
+# ── Normalise protocol: "protein-redesign" is an OOD-internal marker;
+#    BoltzGen CLI only knows protein-anything (redesign is handled via the
+#    design: block in the YAML spec, not by a separate protocol flag).
+BOLTZ_PROTOCOL_ARG="${BOLTZ_PROTOCOL}"
+[ "${BOLTZ_PROTOCOL_ARG}" = "protein-redesign" ] && BOLTZ_PROTOCOL_ARG="protein-anything"
 
 # ── Build optional flags ──────────────────────────────────────────────────
 STEPS_FLAG=""
@@ -29,8 +35,9 @@ cat > "${BOLTZ_SLURM_SCRIPT}" << EOF
 #SBATCH --ntasks=8
 #SBATCH --mem=64G
 #SBATCH --gpus=1
+#SBATCH --constraint=v100|a100
 #SBATCH --time=24:00:00
-#SBATCH --partition=sla-prio
+#SBATCH --partition=standard
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=${BOLTZ_LOG_FILE}
 
@@ -48,7 +55,7 @@ singularity exec --cleanenv --nv --no-home \\
     "${BOLTZ_SIF}" \\
     boltzgen run /input/design_spec.yaml \\
         --output /output \\
-        --protocol "${BOLTZ_PROTOCOL}" \\
+        --protocol "${BOLTZ_PROTOCOL_ARG}" \\
         --num_designs "${BOLTZ_NUM_DESIGNS}" \\
         --budget "${BOLTZ_BUDGET}" \\
         --cache /models \\

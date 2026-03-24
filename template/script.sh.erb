@@ -1,31 +1,6 @@
-# Define the associative arrays for both CPU and GPU phases
-declare -A cpu_progress_table
-declare -A gpu_progress_table
+#!/bin/bash
+# ── Status helpers ────────────────────────────────────────────────────────────
 
-# Populate the arrays with pattern strings and corresponding progress values
-<% if context.session_type == "RFdiffusion" %>
-# Mode-specific progress markers
-<%- case context.design_mode -%>
-<%- when 'binder' -%>
-  gpu_progress_table["Initializing binder constraints"]="15:Setting up binding interface"
-  gpu_progress_table["Optimizing binding energy"]="60:Optimizing binding"
-<%- when 'symmetric' -%> 
-  gpu_progress_table["Building symmetry layers"]="35:Constructing symmetry"
-<%- end -%>
-
-# Common progress markers
-gpu_progress_table["Starting inference"]="0:Starting RFdiffusion <%= context.design_mode.titleize %>"
-gpu_progress_table["Running model"]="10:Loading model weights"
-gpu_progress_table["Initializing diffusion parameters"]="20:Initializing diffusion"
-gpu_progress_table["Processing input PDB"]="30:Processing input structure"
-gpu_progress_table["Generating symmetric oligomer"]="40:Generating symmetry"
-gpu_progress_table["Applying fold conditioning"]="50:Applying fold constraints"
-gpu_progress_table["Running diffusion steps"]="75:Running diffusion"
-gpu_progress_table["Saving output"]="90:Saving results"
-gpu_progress_table["Done processing"]="100:Design completed"
-<% end %>
-
-# Function to update job_status.json
 update_status() {
     local progress=$1
     local output=$2
@@ -38,77 +13,160 @@ update_status() {
     else
         detail_json="["
         for item in "${detail[@]}"; do
-            detail_json+="\"$item\","
+            detail_json+="\"${item//\"/\\\"}\","
         done
-        detail_json="${detail_json%,}]"  # Remove the trailing comma and close the array
+        detail_json="${detail_json%,}]"
     fi
 
-    echo "{\"progress\": \"$progress\", \"status\": \"$output\", \"phase\": \"$phase\", \"detail\": $detail_json}" | tee ${STATUS_FILE}
+    echo "{\"progress\": \"$progress\", \"status\": \"$output\", \"phase\": \"$phase\", \"detail\": $detail_json}" \
+        | tee "${STATUS_FILE}"
 }
 
-# Function to monitor log files and terminate when the SLURM job ends
-monitor_log() {
-    local logfile=$1
-    local job_id=$2
-    local phase=$3
-    local -n progress_table=$4
-
-    update_status 0 "Initializing job..." "$phase"
-
-    declare -A matched_patterns
-    local ordered_patterns=()
-
-    while true; do
-        local last_progress=""
-        local last_output=""
-
-        # Read the entire log file
-        while IFS= read -r line; do
-            for pattern in "${!progress_table[@]}"; do
-                if echo "$line" | grep -q "$pattern"; then
-                    IFS=':' read -r progress output <<< "${progress_table[$pattern]}"
-                    last_progress=$progress
-                    last_output=$output
-                    if [ -z "${matched_patterns[$output]}" ]; then
-                        matched_patterns["$output"]=1
-                        ordered_patterns+=("$output")
-                    fi
-                fi
-            done
-        done < $logfile
-
-        # Update status with the last matched state and prior matched states
-        if [[ -n $last_progress && -n $last_output ]]; then
-            update_status "$last_progress" "$last_output" "$phase" "${ordered_patterns[@]}"
-        fi
-
-        # Check if the SLURM job is still running
-        job_state=$(squeue -j $job_id -h -o %t)
-        if [ "$job_state" != "R" ]; then
-            echo "SLURM job $job_id is no longer running"
-            break
-        fi
-
-        sleep 5  # Check every 5 seconds
-    done
-}
-
-# Function to wait for SLURM job to start and log file to be created
 wait_for_job_and_log() {
     local job_id=$1
     local logfile=$2
 
-    update_status 0 "Waiting for job $job_id to start..." "Initializing"
-    while ! squeue -j $job_id > /dev/null 2>&1; do
+    update_status 0 "Waiting for job ${job_id} to start..." "Queued"
+    while ! squeue -j "$job_id" > /dev/null 2>&1; do
         sleep 5
     done
-
-    echo "Waiting for log file $logfile to be created..."
-    while [ ! -f $logfile ]; do
+    while [ ! -f "$logfile" ]; do
         sleep 5
     done
 }
 
-# Simplified monitoring function for single GPU phase
-wait_for_job_and_log $DIFFUSION_JOB_ID $DIFFUSION_LOG_FILE
-monitor_log $DIFFUSION_LOG_FILE $DIFFUSION_JOB_ID "$SESSION_TYPE GPU Phase - Protein Design" gpu_progress_table
+# ── RFdiffusion monitor ────────────────────────────────────────────────────────
+# Counts "Finished design in" lines vs NUM_DESIGNS to give accurate per-design
+# progress. Milestones from real rfdiffusion log output observed in testing.
+monitor_rf_log() {
+    local logfile=$1
+    local job_id=$2
+    local phase="RFdiffusion — Protein Design"
+    local -a details=()
+
+    update_status 0 "Initializing RFdiffusion job..." "$phase"
+
+    while true; do
+        local progress=0
+        local step="Starting up"
+
+        if [ -f "$logfile" ]; then
+            # ── Startup milestones ──────────────────────────────────────────
+            grep -q "Found GPU with device_name"  "$logfile" 2>/dev/null && { step="GPU detected";           progress=3;  }
+            grep -q "Reading models from"          "$logfile" 2>/dev/null && { step="Loading model weights"; progress=6;  }
+            grep -q "Reading checkpoint from"      "$logfile" 2>/dev/null && { step="Loading checkpoint";    progress=9;  }
+            grep -q "Loading checkpoint\."         "$logfile" 2>/dev/null && { step="Checkpoint loaded";     progress=12; }
+            grep -q "Successful diffuser __init__" "$logfile" 2>/dev/null && { step="Diffusion model ready"; progress=15; }
+
+            # ── Per-design progress ─────────────────────────────────────────
+            # 15 → 95 % spread across all designs
+            local finished
+            finished=$(grep -c "Finished design in" "$logfile" 2>/dev/null || echo 0)
+
+            if [ "$finished" -gt 0 ] && [ "${NUM_DESIGNS:-1}" -gt 0 ]; then
+                progress=$(( 15 + finished * 80 / NUM_DESIGNS ))
+                step="${finished} / ${NUM_DESIGNS} designs complete"
+
+                # Rebuild detail list from log
+                details=()
+                while IFS= read -r line; do
+                    local mins
+                    mins=$(echo "$line" | grep -o '[0-9.]\+ minutes')
+                    details+=("Design $((${#details[@]} + 1)) done (${mins})")
+                done < <(grep "Finished design in" "$logfile" 2>/dev/null)
+
+            elif grep -q "Making design" "$logfile" 2>/dev/null; then
+                step="Diffusion in progress..."
+                progress=18
+            fi
+        fi
+
+        update_status "$progress" "$step" "$phase" "${details[@]}"
+
+        # ── Done when job leaves R state ───────────────────────────────────
+        local job_state
+        job_state=$(squeue -j "$job_id" -h -o %t 2>/dev/null)
+        if [ "$job_state" != "R" ]; then
+            # Final pass after job ends
+            local finished
+            finished=$(grep -c "Finished design in" "$logfile" 2>/dev/null || echo 0)
+            if [ "$finished" -ge "${NUM_DESIGNS:-1}" ]; then
+                update_status 100 "All ${NUM_DESIGNS} designs complete!" "$phase" "${details[@]}"
+            fi
+            break
+        fi
+
+        sleep 5
+    done
+}
+
+# ── BoltzGen monitor ──────────────────────────────────────────────────────────
+# Tracks the 5-step BoltzGen pipeline using real log strings.
+# Each pipeline step contributes a defined slice of the 0-100% range.
+monitor_boltz_log() {
+    local logfile=$1
+    local job_id=$2
+    local phase="BoltzGen — Binder Design"
+    local -a details=()
+
+    update_status 0 "Initializing BoltzGen job..." "$phase"
+
+    while true; do
+        local progress=0
+        local step="Starting up"
+
+        if [ -f "$logfile" ]; then
+            # Configuration phase
+            grep -q "Configuring pipeline"    "$logfile" 2>/dev/null && { step="Configuring pipeline";        progress=5;  }
+            grep -q "Configuration complete"  "$logfile" 2>/dev/null && { step="Pipeline configured";         progress=10; details=("Pipeline configured"); }
+            grep -q "Executing pipeline"      "$logfile" 2>/dev/null && { step="Executing pipeline";          progress=12; }
+
+            # Pipeline steps (each step label appears in the BoltzGen log)
+            grep -q "Pipeline step 1"         "$logfile" 2>/dev/null && { step="Step 1/5: Design diffusion";  progress=15; details+=("Step 1: Design started"); }
+            grep -q "Pipeline step 2"         "$logfile" 2>/dev/null && { step="Step 2/5: Inverse folding";   progress=40; details+=("Step 2: Inverse folding"); }
+            grep -q "Pipeline step 3"         "$logfile" 2>/dev/null && { step="Step 3/5: Structure folding"; progress=58; details+=("Step 3: Folding"); }
+            grep -q "Pipeline step 4"         "$logfile" 2>/dev/null && { step="Step 4/5: Analysis";          progress=75; details+=("Step 4: Analysis"); }
+            grep -q "Pipeline step 5"         "$logfile" 2>/dev/null && { step="Step 5/5: Filtering";         progress=88; details+=("Step 5: Filtering"); }
+
+            # Design step sub-progress: parse "X/TOTAL" from tqdm bar
+            if grep -q "Pipeline step 1" "$logfile" 2>/dev/null && ! grep -q "Pipeline step 2" "$logfile" 2>/dev/null; then
+                local done_count total_count
+                done_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f1)
+                total_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f2)
+                if [ -n "$done_count" ] && [ -n "$total_count" ] && [ "$total_count" -gt 0 ]; then
+                    local design_pct=$(( done_count * 25 / total_count ))
+                    progress=$(( 15 + design_pct ))
+                    step="Step 1/5: Design diffusion (${done_count}/${total_count})"
+                fi
+            fi
+
+            # Completion
+            grep -q "=== Done at" "$logfile" 2>/dev/null && {
+                step="Pipeline complete"
+                progress=100
+                details+=("Done")
+            }
+        fi
+
+        update_status "$progress" "$step" "$phase" "${details[@]}"
+
+        local job_state
+        job_state=$(squeue -j "$job_id" -h -o %t 2>/dev/null)
+        if [ "$job_state" != "R" ]; then
+            grep -q "=== Done at" "$logfile" 2>/dev/null && \
+                update_status 100 "Pipeline complete" "$phase" "${details[@]}"
+            break
+        fi
+
+        sleep 5
+    done
+}
+
+# ── Dispatch ───────────────────────────────────────────────────────────────────
+if [ "${APP_TYPE}" = "rfdiffusion" ]; then
+    wait_for_job_and_log "${DIFFUSION_JOB_ID}" "${DIFFUSION_LOG_FILE}"
+    monitor_rf_log       "${DIFFUSION_LOG_FILE}" "${DIFFUSION_JOB_ID}"
+else
+    wait_for_job_and_log "${BOLTZ_JOB_ID}" "${BOLTZ_LOG_FILE}"
+    monitor_boltz_log    "${BOLTZ_LOG_FILE}" "${BOLTZ_JOB_ID}"
+fi

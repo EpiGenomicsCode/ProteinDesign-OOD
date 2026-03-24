@@ -69,7 +69,7 @@ CONTIGS="[<%= context.nterm_min %>-<%= context.nterm_max %>/${MOTIF_CHAIN}<%= co
 
 CKPT_PARAM=""
 <%- if context.scaffold_model.to_s == 'active_site' -%>
-CKPT_PARAM="inference.ckpt_override_path=/app/RFdiffusion/models/ActiveSite_ckpt.pt"
+CKPT_PARAM="inference.ckpt_override_path=/usr/local/lib/python3.9/dist-packages/rfdiffusion/models/ActiveSite_ckpt.pt"
 <%- end -%>
 export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' ${CKPT_PARAM}"
 
@@ -82,11 +82,22 @@ CONTIGS="[${STRUCT_LEN}-${STRUCT_LEN}]"
 export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' diffuser.partial_T=<%= context.partial_T %>"
 
 <%- when 'unconditional' -%>
-# Unconditional Generation — no input PDB
-# Reference: examples/design_unconditional.sh
-export PDB_FILE=""
+# Unconditional Generation — input PDB is optional; the structure is loaded
+# by the sampler but does NOT condition the generation (pure de novo).
+# If omitted, RFdiffusion falls back to its own bundled example PDB.
 CONTIGS="[<%= context.length_min %>-<%= context.length_max %>]"
 export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}'"
+<%- if context.pdb_structure.to_s.strip.empty? -%>
+export PDB_FILE=""
+<%- else -%>
+export PDB_FILE="${INPUT_DIR}/input.pdb"
+if [ -f "<%= context.pdb_structure %>" ]; then
+  ln -sf "<%= context.pdb_structure %>" "${PDB_FILE}"
+else
+  echo "WARNING: PDB not found at '<%= context.pdb_structure %>'. Using container default." >&2
+  export PDB_FILE=""
+fi
+<%- end -%>
 
 <%- when 'symmetric' -%>
 # Symmetric Oligomers — uses --config-name symmetry

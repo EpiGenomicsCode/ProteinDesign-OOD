@@ -13,7 +13,7 @@ WORKINGDIR=$2
 ACCOUNT=$3
 STATUS_FILE=$4
 
-DIFFUSION_LOG_FILE="${LOGDIR}/diffusion_job.log"
+export DIFFUSION_LOG_FILE="${LOGDIR}/diffusion_job.log"
 DIFFUSION_SLURM_SCRIPT="${INPUT_DIR}/diffusion_job.slurm"
 
 # ── Conditional flags ─────────────────────────────────────────────────────
@@ -24,8 +24,11 @@ if [ "${USE_SYMMETRY_CONFIG}" = "1" ]; then
   CONFIG_NAME_ARG="--config-name symmetry"
 fi
 
-# Only pass input_pdb when we have one (unconditional generation needs no PDB)
-INPUT_PDB_ARG=""
+# RFdiffusion always needs an input_pdb path even for unconditional generation
+# (the code loads it to initialise the sampler but ignores the structure when
+#  the contigs are purely generative, e.g. [100-200]).
+# Fall back to the example PDB shipped inside the container.
+INPUT_PDB_ARG="inference.input_pdb=/app/RFdiffusion/examples/input_pdbs/1qys.pdb"
 if [ -n "${PDB_FILE}" ] && [ -f "${PDB_FILE}" ]; then
   INPUT_PDB_ARG="inference.input_pdb=/inputs/$(basename "${PDB_FILE}")"
 fi
@@ -39,7 +42,7 @@ cat > "${DIFFUSION_SLURM_SCRIPT}" << EOF
 #SBATCH --mem=60GB
 #SBATCH --gpus=1
 #SBATCH --time=10:00:00
-#SBATCH --partition=sla-prio
+#SBATCH --partition=standard
 #SBATCH --account=${ACCOUNT}
 #SBATCH --output=${DIFFUSION_LOG_FILE}
 
@@ -55,6 +58,7 @@ singularity exec --cleanenv --nv \\
     ${CONFIG_NAME_ARG} \\
     ${INPUT_PDB_ARG} \\
     inference.output_prefix=/outputs/design \\
+    inference.model_directory_path=/usr/local/lib/python3.9/dist-packages/rfdiffusion/models \\
     inference.schedule_directory_path=/app/RFdiffusion/schedules \\
     inference.num_designs=${NUM_DESIGNS} \\
     ${DIFFUSION_PARAMS}

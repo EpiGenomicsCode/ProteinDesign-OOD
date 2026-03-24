@@ -108,14 +108,14 @@ attributes:
       - ["Partial Diffusion", "partial",
          data-hide-pdb-structure: false]
       - ["Unconditional Generation", "unconditional",
-         data-hide-pdb-structure: true]
+         data-hide-pdb-structure: false]
       - ["Symmetric Design", "symmetric",
          data-hide-pdb-structure: false]
 
   pdb_structure:
     widget: path_selector
-    label: "Target PDB File"
-    help: "Select an existing PDB file from HPC storage"
+    label: "Input PDB File"
+    help: "PDB file from HPC storage. Required for Binder, Scaffold, Partial, and Symmetric modes. Optional for Unconditional — if omitted, RFdiffusion uses an internal default structure (the PDB is loaded but the structure is not used to condition de novo generation)."
     required: false
     directory: false
     show_files: true

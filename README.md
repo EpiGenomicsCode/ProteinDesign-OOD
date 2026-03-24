@@ -63,12 +63,14 @@ Universal binder design from the Stark Lab. Runs a full design pipeline: backbon
 
 | Requirement | RFdiffusion | BoltzGen |
 |-------------|------------|----------|
-| GPU | NVIDIA A100/V100 | NVIDIA A100 (recommended) |
+| GPU | NVIDIA V100 / A100 (or newer) | NVIDIA V100 / A100 (or newer) |
 | GPU Memory | 40GB+ | 40GB+ |
 | RAM | 60GB | 64GB |
 | Temp Storage | 50GB+ | 100GB+ (models ~6GB) |
 | Container | `rfdiffusion_x86.sif` | `boltzgen_x86.sif` |
 | Container Runtime | Singularity / Apptainer | Singularity / Apptainer |
+
+> **GPU note:** The containers require PyTorch ≥ sm_70 (V100 or newer). On ROAR Collab the templates already set `#SBATCH --constraint=v100|a100` to avoid P100 nodes — this has been tested and works. If your cluster uses different GPU labels, update that line in `template/boltzgen.sh` and `template/rfdiffusion.sh`. If you need to run on older GPUs, try rebuilding the container from the [ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers) definition files with a compatible PyTorch version.
 
 ---
 

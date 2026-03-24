@@ -1,145 +1,306 @@
 <% require 'json' %>
 
-<% 
-status_data = {}
-diffusion_job_id = nil
-run_dir = nil
-input_dir = nil
-struct = nil
-logdir = nil
-diffusion_log_file = nil
+<%
+# ── Read connection variables ─────────────────────────────────────────────────
+app_type         = nil
+job_id           = nil
+run_dir          = nil
+struct           = nil
+logdir           = nil
+log_file         = nil
+status_file_path = nil
+status_data      = {}
 
-if staged_root && File.exist?(staged_root.join('connection.yml')) 
-  diffusion_job_id = connect.DIFFUSION_JOB_ID
-  run_dir = connect.RUN_DIR
-  input_dir = connect.INPUT_DIR
-  struct = connect.STRUCT
-  logdir = connect.LOGDIR
-  diffusion_log_file = connect.DIFFUSION_LOG_FILE
+if staged_root && File.exist?(staged_root.join('connection.yml'))
+  app_type = (connect.APP_TYPE rescue nil) || "rfdiffusion"
 
-  # Read status.json file
-  status_file = File.join(staged_root, connect.STATUS_FILE || "")
-  status_data = JSON.parse(File.read(status_file)) if File.exist?(status_file)
+  if app_type == "boltzgen"
+    job_id   = (connect.BOLTZ_JOB_ID      rescue nil)
+    log_file = (connect.BOLTZ_LOG_FILE     rescue nil)
+  else
+    job_id   = (connect.DIFFUSION_JOB_ID  rescue nil)
+    log_file = (connect.DIFFUSION_LOG_FILE rescue nil)
+  end
+
+  run_dir  = (connect.RUN_DIR   rescue nil)
+  struct   = (connect.STRUCT    rescue nil)
+  logdir   = (connect.LOGDIR    rescue nil)
+
+  sf = (connect.STATUS_FILE rescue "status.json")
+  status_file_path = File.join(staged_root, sf)
+  status_data = JSON.parse(File.read(status_file_path)) if status_file_path && File.exist?(status_file_path)
 end
 
-# Extract information from status_data
-if status_data
-  progress = status_data['progress'] || 0
-  status = status_data['status'] || "Initializing"
-  phase = status_data['phase'] || "Setup"
-  details = status_data['detail'] || []
-  details_html = details.compact.map { |detail| "<li>#{detail}</li>" }.join
+progress = (status_data['progress'] || 0).to_i
+step     = status_data['status']  || "Initializing…"
+phase    = status_data['phase']   || "Starting"
+details  = status_data['detail']  || []
+
+# Determine bar color and label
+is_rf    = (app_type != "boltzgen")
+tool_label  = is_rf ? "RFdiffusion" : "BoltzGen"
+tool_icon   = is_rf ? "🔬" : "🧬"
+bar_color   = is_rf ? "#2563eb" : "#7c3aed"
+bar_stripe  = progress < 100
+
+# Read log (cap at last 120 lines to keep the panel manageable)
+log_text = ""
+if log_file && File.exist?(log_file)
+  lines    = File.readlines(log_file, chomp: true)
+  log_text = lines.last(120).join("\n")
 end
 %>
 
-<%- if status_file && File.exist?(status_file) -%>
-  <div class="status-box">
-    <h5>Design Progress</h5>
-    <p><strong>Job ID:</strong> <%= diffusion_job_id %>
-      <a href="/pun/sys/dashboard/activejobs?jobcluster=all&jobfilter=user" class="job-link">
-        View My Jobs <i class="fa fa-external-link"></i>
-      </a>
-    </p>
-    <p><strong>Working Directory:</strong> 
-      <a href="/pun/sys/dashboard/files/fs<%= run_dir %>" target="_blank" class="directory-link">
-        <%= run_dir %>
-        <i class="fa fa-external-link"></i>
-      </a>
-    </p>
-    <div class="progress-container">
-      <p class="phase-status"><strong>Phase:</strong> <span class="phase-text"><%= phase %></span></p>
-      <div class="progress">
-        <div class="progress-bar" role="progressbar" 
-             style="width: <%= progress %>%;" 
-             aria-valuenow="<%= progress %>" 
-             aria-valuemin="0" 
-             aria-valuemax="100">
-          <%= progress %>%
-        </div>
-      </div>
-      <p class="current-step"><strong>Current Step:</strong> <%= status %></p>
-    </div>
+<style>
+/* ── Card shell ─────────────────────────────────────────────────── */
+.pd-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.07);
+}
+.pd-card + .pd-card { margin-top: 0; }
 
-    <%- if details.any? -%>
-      <div class="progress-details">
-        <h6>Progress History:</h6>
-        <ul class="detail-list">
-          <%= details_html.html_safe %>
-        </ul>
-      </div>
+/* ── Header row ─────────────────────────────────────────────────── */
+.pd-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.pd-tool-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.pd-tool-badge.rf    { background: #2563eb; }
+.pd-tool-badge.boltz { background: #7c3aed; }
+.pd-title { font-size: 16px; font-weight: 700; color: #1e293b; margin: 0; }
+
+/* ── Meta grid ──────────────────────────────────────────────────── */
+.pd-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-size: 13px;
+  color: #475569;
+  margin-bottom: 18px;
+}
+.pd-meta strong { color: #1e293b; white-space: nowrap; }
+.pd-meta a { color: #2563eb; text-decoration: none; }
+.pd-meta a:hover { text-decoration: underline; }
+
+/* ── Progress bar ───────────────────────────────────────────────── */
+.pd-progress-wrap { margin-bottom: 6px; }
+.pd-progress-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 5px;
+}
+.pd-bar-track {
+  height: 18px;
+  background: #e2e8f0;
+  border-radius: 9px;
+  overflow: hidden;
+}
+.pd-bar-fill {
+  height: 100%;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: width .6s ease;
+  min-width: 28px;
+}
+.pd-bar-fill.animated {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,.15) 0,
+    rgba(255,255,255,.15) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+  animation: stripe-move 1s linear infinite;
+}
+@keyframes stripe-move {
+  from { background-position: 0 0; }
+  to   { background-position: 24px 0; }
+}
+
+/* ── Phase / step text ──────────────────────────────────────────── */
+.pd-phase {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 6px;
+  margin-bottom: 14px;
+}
+.pd-phase .pd-step-highlight {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+/* ── Detail timeline ────────────────────────────────────────────── */
+.pd-timeline {
+  border-left: 2px solid #e2e8f0;
+  padding-left: 14px;
+  margin: 0;
+  list-style: none;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.pd-timeline li {
+  position: relative;
+  font-size: 12px;
+  color: #475569;
+  padding: 3px 0;
+}
+.pd-timeline li::before {
+  content: "";
+  position: absolute;
+  left: -18px;
+  top: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+.pd-timeline li:last-child::before { background: #22c55e; }
+
+/* ── Log box ────────────────────────────────────────────────────── */
+.pd-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.pd-log-header h6 { margin: 0; font-size: 13px; font-weight: 600; color: #1e293b; }
+.pd-log-header a { font-size: 12px; color: #2563eb; text-decoration: none; }
+.pd-log-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #0f172a;
+}
+.pd-log-scroll pre {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #94a3b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* colour-code key prefixes */
+.pd-log-scroll pre .log-info  { color: #67e8f9; }
+.pd-log-scroll pre .log-warn  { color: #fbbf24; }
+.pd-log-scroll pre .log-err   { color: #f87171; }
+.pd-log-scroll pre .log-done  { color: #4ade80; }
+</style>
+
+<%- if status_file_path && File.exist?(status_file_path) -%>
+
+<div class="pd-card">
+  <%# ── Header ──────────────────────────────────────────────────── %>
+  <div class="pd-header">
+    <span class="pd-tool-badge <%= is_rf ? 'rf' : 'boltz' %>">
+      <%= tool_icon %> <%= tool_label %>
+    </span>
+    <h5 class="pd-title">Design Progress</h5>
+  </div>
+
+  <%# ── Meta info ───────────────────────────────────────────────── %>
+  <div class="pd-meta">
+    <strong>Job ID</strong>
+    <span>
+      <%= job_id || "—" %>
+      <a href="/pun/sys/dashboard/activejobs?jobcluster=all&jobfilter=user" style="margin-left:6px">
+        View jobs <i class="fa fa-external-link" style="font-size:10px"></i>
+      </a>
+    </span>
+
+    <%- if run_dir -%>
+    <strong>Working&nbsp;dir</strong>
+    <span>
+      <a href="/pun/sys/dashboard/files/fs<%= run_dir %>" target="_blank">
+        <%= run_dir %> <i class="fa fa-external-link" style="font-size:10px"></i>
+      </a>
+    </span>
+    <%- end -%>
+
+    <%- if struct -%>
+    <strong>Output&nbsp;dir</strong>
+    <span>
+      <a href="/pun/sys/dashboard/files/fs<%= struct %>" target="_blank">
+        <%= struct %> <i class="fa fa-external-link" style="font-size:10px"></i>
+      </a>
+    </span>
     <%- end -%>
   </div>
-<%- end -%>
 
-<%- if diffusion_log_file && File.exist?(diffusion_log_file) -%>
-  <div class="log-box">
-    <h6>
-      <a href="/pun/sys/dashboard/files/fs<%= diffusion_log_file %>" target="_blank" class="log-link">
-        Design Process Log 
-        <i class="fa fa-external-link"></i>
-      </a>
-    </h6>
-    <div class="log-container">
-      <pre class="log-content"><%= File.read(diffusion_log_file).gsub(/</, '&lt;').gsub(/>/, '&gt;') %></pre>
+  <%# ── Progress bar ─────────────────────────────────────────────── %>
+  <div class="pd-progress-wrap">
+    <div class="pd-progress-label">
+      <span><%= phase %></span>
+      <span><%= progress %>%</span>
+    </div>
+    <div class="pd-bar-track">
+      <div class="pd-bar-fill <%= bar_stripe ? 'animated' : '' %>"
+           style="width:<%= [progress,100].min %>%; background-color:<%= bar_color %>;">
+        <%= progress > 8 ? "#{progress}%" : "" %>
+      </div>
     </div>
   </div>
+
+  <div class="pd-phase">
+    Current step: <span class="pd-step-highlight"><%= step %></span>
+  </div>
+
+  <%# ── Detail timeline ──────────────────────────────────────────── %>
+  <%- unless details.empty? -%>
+  <ul class="pd-timeline">
+    <%- details.compact.each do |d| -%>
+      <li><%= d %></li>
+    <%- end -%>
+  </ul>
+  <%- end -%>
+</div>
+
 <%- end -%>
 
-<style>
-.status-box {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 25px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
+<%# ── Log panel ────────────────────────────────────────────────────────────── %>
+<%- unless log_text.empty? -%>
+<div class="pd-card">
+  <div class="pd-log-header">
+    <h6><%= tool_icon %> <%= tool_label %> Job Log</h6>
+    <a href="/pun/sys/dashboard/files/fs<%= log_file %>" target="_blank">
+      Open full log <i class="fa fa-external-link" style="font-size:10px"></i>
+    </a>
+  </div>
+  <div class="pd-log-scroll" id="pd-log">
+    <pre><%= log_text.gsub(/[<>&"']/) { |c|
+      {'<'=>'&lt;', '>'=>'&gt;', '&'=>'&amp;', '"'=>'&quot;', "'"=>'&#39;'}[c]
+    } %></pre>
+  </div>
+</div>
 
-.progress-container {
-  margin: 20px 0;
-}
-
-.progress {
-  height: 25px;
-  border-radius: 4px;
-  background-color: #e9ecef;
-}
-
-.progress-bar {
-  background-color: #2c7be5;
-  transition: width 0.5s ease;
-}
-
-.detail-list {
-  max-height: 200px;
-  overflow-y: auto;
-  background: white;
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  padding: 10px;
-}
-
-.log-container {
-  max-height: 400px;
-  border: 1px solid #dee2e6;
-  border-radius: 4px;
-  background: white;
-}
-
-.log-content {
-  padding: 15px;
-  margin: 0;
-  font-family: Monaco, Consolas, 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.job-link, .directory-link, .log-link {
-  color: #2c7be5;
-  text-decoration: none;
-  transition: color 0.2s;
-}
-
-.job-link:hover, .directory-link:hover, .log-link:hover {
-  color: #1b5ab3;
-}
-</style>
+<script>
+(function() {
+  var el = document.getElementById('pd-log');
+  if (el) el.scrollTop = el.scrollHeight;
+})();
+</script>
+<%- end -%>
