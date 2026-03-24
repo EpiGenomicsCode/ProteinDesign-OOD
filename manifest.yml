@@ -1,14 +1,16 @@
 ---
-name: RFdiffusion Protein Design
+name: Protein Design Suite
 category: Interactive Apps
 subcategory: Protein Engineering
 role: batch_connect
 metadata:
   pintype: Interactive Apps
 description: |
-  A web interface for <a href="https://github.com/RosettaCommons/RFdiffusion" target="_blank">RFdiffusion</a>. All features from the original implementation are available through this form including: Binder design, Motif Scaffolding, Partial diffusion, Unconditional generation, Symmetric design.
+  Run <a href="https://github.com/RosettaCommons/RFdiffusion" target="_blank">RFdiffusion</a> or <a href="https://github.com/HannesStark/boltzgen" target="_blank">BoltzGen</a> on GPU nodes — no command line needed.
 
-  The app handles all backend configuration and GPU resource management automatically. Results are provided as PDB files with full trajectory information.
+  <b>RFdiffusion</b> — diffusion-based de novo protein design: binder design, motif scaffolding, partial diffusion, unconditional generation, and symmetric oligomers.
 
-  For methodology details, see the <a href="https://www.biorxiv.org/content/10.1101/2022.12.09.519842v1" target="_blank">paper</a>.
+  <b>BoltzGen</b> — universal binder design for proteins, peptides, nanobodies, antibodies, and small molecules.
+
+  All backend configuration and GPU resource management is handled automatically. Results are provided as PDB/CIF files with full trajectory information.
   

@@ -119,19 +119,18 @@ monitor_boltz_log() {
     while true; do
         local progress=0
         local step="Starting up"
+        # Rebuild details from scratch each poll so entries never duplicate
+        local -a details=()
 
         if [ -f "$logfile" ]; then
             # ── Configuration phase (outer boltzgen process, fresh runs only) ─
-            grep -q "Configuring pipeline"   "$logfile" 2>/dev/null && { step="Configuring pipeline";        progress=5;  }
-            grep -q "Configuration complete" "$logfile" 2>/dev/null && { step="Pipeline configured";         progress=10; details=("Pipeline configured"); }
-            grep -q "Executing pipeline"     "$logfile" 2>/dev/null && { step="Executing pipeline";          progress=12; }
+            grep -q "Configuring pipeline"   "$logfile" 2>/dev/null && { step="Configuring pipeline"; progress=5;  }
+            grep -q "Configuration complete" "$logfile" 2>/dev/null && { step="Pipeline configured";  progress=10; details+=("Pipeline configured"); }
+            grep -q "Executing pipeline"     "$logfile" 2>/dev/null && { step="Executing pipeline";   progress=12; }
 
             # ── Pipeline steps ──────────────────────────────────────────────
-            # Each step is detected by EITHER the outer-process label
-            # ("Pipeline step X of 5:") OR the subprocess tqdm prefix
-            # ("[Step X/5]") — both appear in the log during a fresh run;
-            # only the tqdm prefix appears in a resumed (--reuse) run.
-            # Step patterns match [Step X/N] for any N (BoltzGen step count can vary)
+            # Detected by either "Pipeline step X" (outer process, fresh runs)
+            # or "[Step X/N]" (subprocess tqdm, always present).
             grep -qE "Pipeline step 1|\[Step 1/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 1: Design diffusion";  progress=15; }
             grep -qE "Pipeline step 2|\[Step 2/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 2: Inverse folding";   progress=35; details+=("Step 1: Design done"); }
             grep -qE "Pipeline step 3|\[Step 3/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 3: Structure folding"; progress=55; details+=("Step 2: Inverse folding done"); }
@@ -140,9 +139,6 @@ monitor_boltz_log() {
             grep -qE "Pipeline step 6|\[Step 6/[0-9]+\]" "$logfile" 2>/dev/null && { step="Step 6: Post-processing";   progress=92; details+=("Step 5: Filtering done"); }
 
             # ── Fine-grained design step sub-progress ───────────────────────
-            # While on step 1, parse the tqdm X/TOTAL counter.
-            # Each tqdm line looks like: [Step 1/6] ... | 11/50 [...]
-            # grep -o extracts all X/Y matches; tail -1 gives the latest count.
             if grep -qE "Pipeline step 1|\[Step 1/[0-9]+\]" "$logfile" 2>/dev/null && \
                ! grep -qE "Pipeline step 2|\[Step 2/[0-9]+\]" "$logfile" 2>/dev/null; then
                 local done_count total_count

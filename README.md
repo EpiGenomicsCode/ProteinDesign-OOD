@@ -1,260 +1,210 @@
-# Protein Design Suite — Open OnDemand Application
+# Protein Design Suite
 
-A unified web interface for GPU-accelerated protein design on HPC clusters, supporting two complementary tools: **RFdiffusion** for diffusion-based de novo design and **BoltzGen** for universal binder design.
+## Overview
 
----
+An [Open OnDemand](https://openondemand.org/) Batch Connect app that provides a
+web-based interface for running de novo protein design jobs on GPU nodes.
+The app supports two complementary tools and handles all backend configuration,
+job submission, and real-time progress monitoring automatically.
 
-## Supported Tools
+- **[RFdiffusion](https://github.com/RosettaCommons/RFdiffusion)** — diffusion-based de novo protein design (binder design, motif scaffolding, partial diffusion, unconditional generation, symmetric oligomers)
+- **[BoltzGen](https://github.com/boltzmann-labs/boltzgen)** — universal binder design for proteins, peptides, nanobodies, antibodies, and small molecules
 
-### RFdiffusion
-Diffusion-based protein design from the Baker Lab (University of Washington). Generates novel protein structures from scratch or guided by structural constraints.
-
-**Design Modes:**
-| Mode | Description |
-|------|-------------|
-| **Binder Design** | Design a protein/peptide to bind a target protein via hotspot residues |
-| **Motif Scaffolding** | Embed a functional motif (e.g., active site) into a stable new scaffold |
-| **Partial Diffusion** | Add controlled diversity to an existing structure |
-| **Unconditional Generation** | Generate novel proteins of a specified length with no constraints |
-| **Symmetric Design** | Design homo-oligomers with cyclic (C2–C6), dihedral (D2/D3), or higher symmetry |
-
-**Key Parameters (auto-handled by the form):**
-- `contigmap.contigs` — structural constraint map
-- `ppi.hotspot_res` — target residues to drive binding
-- `denoiser.noise_scale_ca / frame` — quality vs. diversity trade-off
-- `diffuser.partial_T` — noise level for partial diffusion
-- `inference.symmetry` — oligomer symmetry type
-- `inference.ckpt_override_path` — select Active Site model for sparse motifs
+**Batch Connect template:** `basic` | **Scheduler:** Slurm | **Container runtime:** Singularity / Apptainer
 
 ---
 
-### BoltzGen
-Universal binder design from the Stark Lab. Runs a full design pipeline: backbone diffusion → inverse folding → refolding → analysis → filtering.
+## How It Looks
 
-**Protocols:**
-| Protocol | Description |
-|----------|-------------|
-| **protein-anything** | Design a protein binder to bind a target protein or peptide |
-| **peptide-anything** | Design a cyclic or linear peptide binder |
-| **protein-small_molecule** | Design a protein to bind a small molecule (CCD or SMILES) |
-| **nanobody-anything** | Design nanobody CDRs against a target |
-| **antibody-anything** | Design antibody CDRs against a target |
-| **protein-redesign** | Redesign or optimize residues in an existing protein structure |
+### Launch form
 
-**Key Parameters:**
-- `--protocol` — design protocol (see above)
-- `--num_designs` — intermediate designs to generate (50 to test; 10,000–60,000 for production)
-- `--budget` — final diversity-optimized set size
-- `--steps` — run specific pipeline steps only (e.g., re-run filtering)
-- `--reuse` — resume an interrupted run
+| RFdiffusion options | BoltzGen options |
+|---|---|
+| ![Form part 1](docs/form_part1.png) | ![Form part 2](docs/form_part2.png) |
 
-**Pipeline Steps (in order):**
-1. `design` — backbone diffusion
-2. `inverse_folding` — sequence design onto backbone
-3. `folding` — re-fold with target (Boltz-2)
-4. `design_folding` — re-fold binder alone (protein protocols)
-5. `affinity` — binding affinity prediction (small molecule protocols)
-6. `analysis` — compute quality metrics
-7. `filtering` — rank and select final designs
+### Progress during and after a run
+
+| BoltzGen running (live log + step tracker) | RFdiffusion completed |
+|---|---|
+| ![BoltzGen running](docs/boltz_running.png) | ![RFdiffusion completed](docs/rfdiff_completed.png) |
 
 ---
 
-## System Requirements
+## Features
 
-| Requirement | RFdiffusion | BoltzGen |
-|-------------|------------|----------|
-| GPU | NVIDIA V100 / A100 (or newer) | NVIDIA V100 / A100 (or newer) |
-| GPU Memory | 40GB+ | 40GB+ |
-| RAM | 60GB | 64GB |
-| Temp Storage | 50GB+ | 100GB+ (models ~6GB) |
-| Container | `rfdiffusion_x86.sif` | `boltzgen_x86.sif` |
-| Container Runtime | Singularity / Apptainer | Singularity / Apptainer |
-
-> **GPU note:** The containers require PyTorch ≥ sm_70 (V100 or newer). On ROAR Collab the templates already set `#SBATCH --constraint=v100|a100` to avoid P100 nodes — this has been tested and works. If your cluster uses different GPU labels, update that line in `template/boltzgen.sh` and `template/rfdiffusion.sh`. If you need to run on older GPUs, try rebuilding the container from the [ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers) definition files with a compatible PyTorch version.
+- **Unified form** — select RFdiffusion or BoltzGen from a single dropdown; irrelevant fields hide automatically
+- **RFdiffusion modes:** binder design (PPI), motif scaffolding, partial diffusion, unconditional generation, symmetric oligomers
+- **BoltzGen protocols:** protein-anything, peptide-anything, nanobody-anything, antibody-anything, protein→small molecule, protein redesign
+- **Real-time progress bar** — startup milestones, per-design counters (RFdiffusion) and per-pipeline-step tracking (BoltzGen)
+- **Live log panel** — streams the job log directly in the browser
+- **Automatic GPU resource management** — GPU constraint enforced to avoid incompatible hardware
+- **Results** as PDB / CIF files with full trajectory information
 
 ---
 
-## Container Setup
+## Prerequisites
 
-All container definition files, build scripts, and pre-built container instructions are maintained in the **[EpiGenomicsCode/ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)** repository.
+### Open OnDemand
+- OOD v3 or v4 (tested on OOD v4)
+- Slurm scheduler
 
-Choose a shared directory accessible from all compute nodes (e.g. a group storage path or scratch space) and place both SIF files and the BoltzGen model weights there:
+### GPU Requirements
+The containers require PyTorch ≥ sm_70. On ROAR Collab the SLURM templates already
+set `#SBATCH --constraint=v100|a100` — this has been tested and works.
+If your cluster uses different GPU labels, update that line in `template/boltzgen.sh`
+and `template/rfdiffusion.sh`. If you need to run on older GPUs, try rebuilding the
+container from the [ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)
+definition files with a compatible PyTorch version.
 
-```
-<container_dir>/
-├── rfdiffusion_x86.sif    # RFdiffusion (models baked in at build time)
-├── boltzgen_x86.sif       # BoltzGen runtime
-└── boltzgen_models/       # BoltzGen weights (~6GB, downloaded separately)
-```
+### Singularity Containers and Models
 
-Update `template/rfdiffusion_env.sh` to point `CONTAINER_BASE` at your chosen directory.
+Build or pull the containers using the definition files in
+[ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers):
 
-### Option 1 — Pull pre-built containers from Sylabs Cloud (recommended)
+| Image | File |
+|---|---|
+| `rfdiffusion_x86.sif` | `rfdiffusion/rfdiffusion_x86.def` |
+| `boltzgen_x86.sif` | `boltzgen/boltzgen_x86.def` |
 
-```bash
-cd <container_dir>
-
-# Optionally verify container authenticity first:
-# singularity key import keys/mypublic.pem
-# (keys/mypublic.pem is in the ProteinDesign-Containers repo)
-
-# RFdiffusion — model weights are baked into the image, nothing extra to download
-singularity pull --arch amd64 rfdiffusion_x86.sif \
-    library://rfdiffusion/repo/rfdiffusion:amd64
-
-# BoltzGen
-singularity pull boltzgen_x86.sif \
-    library://boltzgen/default/boltzgen_x86:latest
-```
-
-### Option 2 — Build from definition files
-
-Clone the container repository and use the provided SLURM build script:
-
-```bash
-git clone https://github.com/EpiGenomicsCode/ProteinDesign-Containers.git
-cd ProteinDesign-Containers
-
-# Edit build_container.slurm to set your partition and account, then:
-sbatch build_container.slurm rfdiffusion x86 <container_dir>
-sbatch build_container.slurm boltzgen    x86 <container_dir>
-```
-
-See the [ProteinDesign-Containers README](https://github.com/EpiGenomicsCode/ProteinDesign-Containers) for full build instructions and troubleshooting.
-
-### Downloading BoltzGen model weights
-
-Run once after the BoltzGen SIF is available:
-
-```bash
-cd <container_dir>
-mkdir -p boltzgen_models
-
-singularity exec --cleanenv --no-home \
-    -B ./boltzgen_models:/models \
-    --env HF_HOME=/models --env HOME=/tmp \
-    boltzgen_x86.sif boltzgen download all
-```
+BoltzGen downloads model weights automatically from Hugging Face on first run and
+caches them in the directory bound to `/models` inside the container.
+Set `BOLTZ_MODEL_DIR` in `template/rfdiffusion_env.sh` to a persistent path with
+sufficient storage (~6 GB).
 
 ---
 
-## Usage — Web Interface
+## Installation
 
-1. Access the Open OnDemand portal
-2. Navigate to **"Protein Design Suite"**
-3. Select **Application**: RFdiffusion or BoltzGen
-4. Fill in the mode/protocol-specific fields (the form shows only relevant options)
-5. Submit — the job runs on a GPU node via SLURM
+1. Clone this repository into your OOD dev apps directory:
+   ```bash
+   cd ~/ondemand/dev
+   git clone https://github.com/EpiGenomicsCode/ProteinDesign-Suite RFDiff
+   ```
 
-### RFdiffusion — example binder design
+2. Build or pull the Singularity containers (see [ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)).
 
-The form builds the correct Hydra overrides automatically. Equivalent CLI:
-```bash
-singularity exec --cleanenv --nv \
-  --bind inputs:/inputs --bind outputs:/outputs \
-  --bind schedules:/app/RFdiffusion/schedules \
-  /path/to/rfdiffusion_x86.sif \
-  python3.9 /app/RFdiffusion/scripts/run_inference.py \
-    inference.input_pdb=/inputs/target.pdb \
-    inference.output_prefix=/outputs/design \
-    inference.num_designs=10 \
-    'contigmap.contigs=[A1-150/0 70-100]' \
-    'ppi.hotspot_res=[A59,A83,A91]' \
-    denoiser.noise_scale_ca=0 \
-    denoiser.noise_scale_frame=0
-```
+3. Edit `template/rfdiffusion_env.sh` and set the paths for your site:
+   ```bash
+   CONTAINER_BASE="/path/to/your/containers"   # directory with .sif files
+   BOLTZ_MODEL_DIR="${CONTAINER_BASE}/boltzgen_models"
+   ```
 
-### BoltzGen — example protein binder
-
-The form generates the design YAML and builds the command automatically. Equivalent CLI:
-```bash
-# design_spec.yaml
-# entities:
-#   - protein: {id: B, sequence: 70..100}
-#   - file: {path: target.pdb, include: [{chain: {id: A}}],
-#             binding_types: [{chain: {id: A, binding: "59,83,91"}}]}
-
-singularity exec --cleanenv --nv --no-home \
-  -B inputs:/input -B outputs:/output -B models:/models \
-  --env HF_HOME=/models --env HOME=/tmp \
-  /path/to/boltzgen_x86.sif \
-  boltzgen run /input/design_spec.yaml \
-    --output /output \
-    --protocol protein-anything \
-    --num_designs 100 \
-    --budget 10 \
-    --cache /models
-```
+4. Verify the app loads in your OOD dashboard under **Interactive Apps → Protein Engineering**.
 
 ---
 
-## Output Structure
+## Configuration
+
+### `template/rfdiffusion_env.sh`
+
+All site-specific paths live here — this is the only file that needs editing for a
+new deployment.
+
+| Variable | Description | Default |
+|---|---|---|
+| `CONTAINER_BASE` | Directory containing `.sif` files | (set by admin) |
+| `BOLTZ_MODEL_DIR` | BoltzGen model cache directory | `${CONTAINER_BASE}/boltzgen_models` |
+| `DIFFUSION_SIF` | RFdiffusion container path | `${CONTAINER_BASE}/rfdiffusion_x86.sif` |
+| `BOLTZ_SIF` | BoltzGen container path | `${CONTAINER_BASE}/boltzgen_x86.sif` |
+
+### `form.yml.erb` — key attributes
+
+| Attribute | Widget | Description | Default |
+|---|---|---|---|
+| `app_type` | select | RFdiffusion or BoltzGen | `rfdiffusion` |
+| `auto_accounts` | select | GPU-capable Slurm account | (dynamic) |
+| `working_directory` | path_selector | Output directory | `/scratch/<user>` |
+| `design_mode` | select | RFdiffusion mode | `binder` |
+| `num_designs` | number | Designs to generate | `10` |
+| `boltz_protocol` | select | BoltzGen protocol | `protein-anything` |
+| `boltz_num_designs` | number | BoltzGen intermediate designs | `100` |
+| `boltz_budget` | number | Final filtered design count | `10` |
+
+### `submit.yml.erb`
+
+The wrapper job runs on the `basic` partition with the `open` account.
+The actual compute job (RFdiffusion or BoltzGen) is submitted separately
+inside `before.sh.erb` with GPU resources on the `standard` partition.
+Update the partition and account names to match your cluster.
+
+---
+
+## Usage
+
+1. Open the OOD dashboard and navigate to **Interactive Apps → Protein Engineering → Protein Design Suite**
+2. Select the tool (**RFdiffusion** or **BoltzGen**)
+3. Enter your GPU account and working directory
+4. Fill in the tool-specific parameters:
+   - **RFdiffusion:** choose design mode, provide a target PDB (required for all modes except unconditional), set length / contigs
+   - **BoltzGen:** choose protocol, provide a target structure file, set binder length range and budget
+5. Submit — the app launches a wrapper job that stages inputs and submits the compute job
+6. Monitor progress in the OOD session panel: live step tracker, percentage bar, and streaming log
+
+### Output structure
 
 ```
-working_dir/ppTIMESTAMP/
-├── input/
-│   ├── input.pdb              # (RFdiffusion) staged target PDB
-│   ├── design_spec.yaml       # (BoltzGen) generated design specification
-│   ├── target.*               # (BoltzGen) staged target structure
-│   └── *_job.slurm            # submitted SLURM script
-├── structure/                 # all output files
-│   │── *.pdb / *.cif          # (RFdiffusion) generated structures
-│   ├── intermediate_designs/  # (BoltzGen) backbone designs
-│   ├── intermediate_designs_inverse_folded/
-│   ├── final_ranked_designs/  # (BoltzGen) filtered, ranked output
-│   └── ...
-└── logs/
-    ├── diffusion_job.log      # (RFdiffusion)
-    └── boltzgen_job.log       # (BoltzGen)
+<working_directory>/
+└── pp<session_id>/
+    ├── input/            # Staged inputs and generated SLURM scripts
+    ├── structure/        # Design outputs (PDB / CIF files)
+    └── logs/             # Job logs (streamed live in the browser)
 ```
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| RFdiffusion: `No such file: /app/RFdiffusion/models` | Old path passed | Do not pass `inference.model_directory_path` — models are in site-packages |
-| RFdiffusion: Hydra config error | Wrong working dir | Ensure `python3.9 /app/RFdiffusion/scripts/run_inference.py` (full path) |
-| BoltzGen: `SIF not found` | Missing container | Pull `boltzgen_x86.sif` and set `BOLTZ_SIF` path |
-| BoltzGen: model download error | Empty `boltzgen_models/` | Run `boltzgen download all` via the SIF |
-| GPU OOM | Too many designs in one batch | Reduce `--diffusion_batch_size` |
-| Job pending indefinitely | No GPU allocation | Verify `auto_accounts` has GPU access |
-| BoltzGen: interrupted run | Network/timeout | Re-submit with **"Resume Previous Run"** checked |
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| "Permission denied" on mkdir | Working directory path not writable | Use `/scratch/<user>` or another writable path |
+| "undefined method" on staging | Form field missing from `form.yml.erb` | Pull latest — all context fields are now declared |
+| Progress bar stuck at 0% "Starting up" | Old staged `script.sh` in session | Cancel and resubmit; templates are updated |
+| BoltzGen: CUDA error / no kernel image | Job landed on a P100 GPU | Ensure `--constraint=v100|a100` is in `template/boltzgen.sh` |
+| RFdiffusion: FileNotFoundError for PDB | Container path mismatch | Check `inference.input_pdb` path in `template/rfdiffusion.sh` |
+| BoltzGen step 4 AssertionError | Stale output dir with `--reuse` | Run without `--reuse` (default) for fresh jobs |
 
 ---
 
-## Architecture
+## Testing
 
-```
-form.yml.erb        ← OOD form definition, data-hide-* for dynamic fields
-form.js             ← injects mode/protocol-specific fields, validation
-template/
-  before.sh.erb     ← builds Hydra overrides (RF) or design YAML (BoltzGen)
-  rfdiffusion_env.sh← container paths, run dirs  ← edit CONTAINER_BASE here
-  rfdiffusion.sh    ← generates + submits RFdiffusion SLURM job
-  boltzgen.sh       ← generates + submits BoltzGen SLURM job
-```
+Tested on **ICDS ROAR Collab** (Penn State) with:
+- OOD v4
+- Slurm
+- Singularity / Apptainer
+- V100 and A100 GPUs
 
-Container definitions and build tooling:
-**[EpiGenomicsCode/ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers)**
+All five RFdiffusion modes (binder, scaffold, partial, unconditional, symmetric)
+and the BoltzGen protein-anything protocol have been run end-to-end through the form.
+
+---
+
+## Contributing
+
+For bugs or feature requests, [open an issue](https://github.com/EpiGenomicsCode/ProteinDesign-Suite/issues).
+
+---
+
+## References
+
+- [RFdiffusion](https://github.com/RosettaCommons/RFdiffusion) — Watson et al., *Nature* 2023
+- [BoltzGen](https://github.com/boltzmann-labs/boltzgen) — universal binder design
+- [ProteinDesign-Containers](https://github.com/EpiGenomicsCode/ProteinDesign-Containers) — Singularity definition files
+- [Open OnDemand](https://openondemand.org/) — HPC portal framework
+- [OOD Batch Connect app development docs](https://osc.github.io/ood-documentation/latest/app-development.html)
 
 ---
 
 ## License
-MIT License
 
-## Citation
-
-**RFdiffusion:**
-> Watson et al. (2023). De novo design of protein structure and function with RFdiffusion. *Nature*, 620, 1089–1100.
-
-**BoltzGen:**
-> Stark et al. (2025). BoltzGen: Toward Universal Binder Design. *bioRxiv*.
+MIT — see [LICENSE](LICENSE)
 
 ## Acknowledgements
-This project is generously funded by Cornell University BRC Epigenomics Core Facility (RRID:SCR_021287), Penn State Institute for Computational and Data Sciences (RRID:SCR_025154), and Penn State University Center for Applications of Artificial Intelligence and Machine Learning to Industry Core Facility / AIMI (RRID:SCR_022867). Computational support provided by NSF ACCESS through BIO230041.
+
+Supported by Penn State Institute for Computational and Data Sciences (RRID:SCR_025154)
+and Penn State University Center for Applications of Artificial Intelligence and Machine
+Learning to Industry Core Facility (AIMI) (RRID:SCR_022867).
 
 ## Contact
-- Technical Support: [icds-help@psu.edu](mailto:icds-help@psu.edu)
-- Application Maintainer: [vvm5242@psu.edu](mailto:vvm5242@psu.edu)
+
+- Technical support: vinaysmathew@psu.edu
+- ICDS support: icds@psu.edu
