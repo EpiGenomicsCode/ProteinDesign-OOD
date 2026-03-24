@@ -16,11 +16,17 @@ job submission, and real-time progress monitoring automatically.
 
 ## How It Looks
 
-### Launch form
+### BoltzGen input form
 
-| Example options Pt. 1 | Example options Pt. 2 |
+| BoltzGen — part 1 | BoltzGen — part 2 |
 |---|---|
-| ![Form part 1](docs/form_part1.png) | ![Form part 2](docs/form_part2.png) |
+| ![BoltzGen form part 1](docs/boltz_form_part1.png) | ![BoltzGen form part 2](docs/boltz_form_part2.png) |
+
+### RFdiffusion input form
+
+| RFdiffusion — part 1 | RFdiffusion — part 2 |
+|---|---|
+| ![RFdiffusion form part 1](docs/rfdiff_form_part1.png) | ![RFdiffusion form part 2](docs/rfdiff_form_part2.png) |
 
 ### Progress during and after a run
 
