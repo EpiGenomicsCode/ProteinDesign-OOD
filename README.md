@@ -18,7 +18,7 @@ job submission, and real-time progress monitoring automatically.
 
 ### Launch form
 
-| RFdiffusion options | BoltzGen options |
+| Example options Pt. 1 | Example options Pt. 2 |
 |---|---|
 | ![Form part 1](docs/form_part1.png) | ![Form part 2](docs/form_part2.png) |
 
