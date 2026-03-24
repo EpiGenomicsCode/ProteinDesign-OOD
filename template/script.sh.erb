@@ -83,16 +83,21 @@ monitor_rf_log() {
 
         update_status "$progress" "$step" "$phase" "${details[@]}"
 
+        # ── Completion marker ───────────────────────────────────────────────
+        # "=== Done at" is printed by the SLURM script after singularity exits.
+        if grep -q "=== Done at" "$logfile" 2>/dev/null; then
+            local finished
+            finished=$(grep -c "Finished design in" "$logfile" 2>/dev/null || echo 0)
+            local msg="${finished} / ${NUM_DESIGNS} designs complete"
+            [ "$finished" -ge "${NUM_DESIGNS:-1}" ] && msg="All ${NUM_DESIGNS} designs complete!"
+            update_status 100 "$msg" "$phase" "${details[@]}"
+            break
+        fi
+
         # ── Done when job leaves R state ───────────────────────────────────
         local job_state
         job_state=$(squeue -j "$job_id" -h -o %t 2>/dev/null)
         if [ "$job_state" != "R" ]; then
-            # Final pass after job ends
-            local finished
-            finished=$(grep -c "Finished design in" "$logfile" 2>/dev/null || echo 0)
-            if [ "$finished" -ge "${NUM_DESIGNS:-1}" ]; then
-                update_status 100 "All ${NUM_DESIGNS} designs complete!" "$phase" "${details[@]}"
-            fi
             break
         fi
 
@@ -116,20 +121,28 @@ monitor_boltz_log() {
         local step="Starting up"
 
         if [ -f "$logfile" ]; then
-            # Configuration phase
-            grep -q "Configuring pipeline"    "$logfile" 2>/dev/null && { step="Configuring pipeline";        progress=5;  }
-            grep -q "Configuration complete"  "$logfile" 2>/dev/null && { step="Pipeline configured";         progress=10; details=("Pipeline configured"); }
-            grep -q "Executing pipeline"      "$logfile" 2>/dev/null && { step="Executing pipeline";          progress=12; }
+            # ── Configuration phase (outer boltzgen process, fresh runs only) ─
+            grep -q "Configuring pipeline"   "$logfile" 2>/dev/null && { step="Configuring pipeline";        progress=5;  }
+            grep -q "Configuration complete" "$logfile" 2>/dev/null && { step="Pipeline configured";         progress=10; details=("Pipeline configured"); }
+            grep -q "Executing pipeline"     "$logfile" 2>/dev/null && { step="Executing pipeline";          progress=12; }
 
-            # Pipeline steps (each step label appears in the BoltzGen log)
-            grep -q "Pipeline step 1"         "$logfile" 2>/dev/null && { step="Step 1/5: Design diffusion";  progress=15; details+=("Step 1: Design started"); }
-            grep -q "Pipeline step 2"         "$logfile" 2>/dev/null && { step="Step 2/5: Inverse folding";   progress=40; details+=("Step 2: Inverse folding"); }
-            grep -q "Pipeline step 3"         "$logfile" 2>/dev/null && { step="Step 3/5: Structure folding"; progress=58; details+=("Step 3: Folding"); }
-            grep -q "Pipeline step 4"         "$logfile" 2>/dev/null && { step="Step 4/5: Analysis";          progress=75; details+=("Step 4: Analysis"); }
-            grep -q "Pipeline step 5"         "$logfile" 2>/dev/null && { step="Step 5/5: Filtering";         progress=88; details+=("Step 5: Filtering"); }
+            # ── Pipeline steps ──────────────────────────────────────────────
+            # Each step is detected by EITHER the outer-process label
+            # ("Pipeline step X of 5:") OR the subprocess tqdm prefix
+            # ("[Step X/5]") — both appear in the log during a fresh run;
+            # only the tqdm prefix appears in a resumed (--reuse) run.
+            grep -qE "Pipeline step 1|\[Step 1/5\]" "$logfile" 2>/dev/null && { step="Step 1/5: Design diffusion";  progress=15; }
+            grep -qE "Pipeline step 2|\[Step 2/5\]" "$logfile" 2>/dev/null && { step="Step 2/5: Inverse folding";   progress=40; details+=("Step 1: Design done"); }
+            grep -qE "Pipeline step 3|\[Step 3/5\]" "$logfile" 2>/dev/null && { step="Step 3/5: Structure folding"; progress=58; details+=("Step 2: Inverse folding done"); }
+            grep -qE "Pipeline step 4|\[Step 4/5\]" "$logfile" 2>/dev/null && { step="Step 4/5: Analysis";          progress=75; details+=("Step 3: Folding done"); }
+            grep -qE "Pipeline step 5|\[Step 5/5\]" "$logfile" 2>/dev/null && { step="Step 5/5: Filtering";         progress=88; details+=("Step 4: Analysis done"); }
 
-            # Design step sub-progress: parse "X/TOTAL" from tqdm bar
-            if grep -q "Pipeline step 1" "$logfile" 2>/dev/null && ! grep -q "Pipeline step 2" "$logfile" 2>/dev/null; then
+            # ── Fine-grained design step sub-progress ───────────────────────
+            # While on step 1, parse the tqdm X/TOTAL counter.
+            # Each tqdm line looks like: [Step 1/5] ... | 43/50 [...]
+            # grep -o extracts all X/Y matches; tail -1 gives the latest count.
+            if grep -qE "Pipeline step 1|\[Step 1/5\]" "$logfile" 2>/dev/null && \
+               ! grep -qE "Pipeline step 2|\[Step 2/5\]" "$logfile" 2>/dev/null; then
                 local done_count total_count
                 done_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f1)
                 total_count=$(grep -o '[0-9]\+/[0-9]\+' "$logfile" 2>/dev/null | tail -1 | cut -d/ -f2)
@@ -140,7 +153,7 @@ monitor_boltz_log() {
                 fi
             fi
 
-            # Completion
+            # ── Completion ───────────────────────────────────────────────────
             grep -q "=== Done at" "$logfile" 2>/dev/null && {
                 step="Pipeline complete"
                 progress=100

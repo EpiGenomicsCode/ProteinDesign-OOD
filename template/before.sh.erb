@@ -38,7 +38,6 @@ fi
 
 # ── Build Hydra overrides per design mode ─────────────────────────────────
 <%- case context.design_mode -%>
-
 <%- when 'binder' -%>
 # Binder Design (PPI)
 # Contig format: [CHAIN_START-END/0 BINDER_MIN-BINDER_MAX]
@@ -160,7 +159,6 @@ DESIGN_SPEC="${INPUT_DIR}/design_spec.yaml"
 cat > "${DESIGN_SPEC}" << 'BOLTZ_YAML_END'
 entities:
 <%- case context.boltz_protocol -%>
-
 <%- when 'protein-redesign' -%>
   # Redesign mode: target file provides both structure and design mask
   - file:
