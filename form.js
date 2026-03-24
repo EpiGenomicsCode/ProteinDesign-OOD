@@ -230,9 +230,14 @@ $(document).ready(function () {
     var appType = $(this).val();
     if (appType === 'rfdiffusion') {
       refreshRFModeOptions();
+      // Restore pdb_structure visibility (design_mode will control it)
+      formGroup('pdb_structure').show();
     } else {
       rfModeOptions.empty();   // clear any injected RF fields
       resyncBoltzProtocol();   // re-apply protocol data-hide rules
+      // Force-hide pdb_structure: design_mode's data-hide rules would
+      // otherwise keep it visible even when BoltzGen is selected.
+      formGroup('pdb_structure').hide();
     }
   });
 
@@ -358,5 +363,9 @@ $(document).ready(function () {
   var initialApp = $('#batch_connect_session_context_app_type').val();
   if (initialApp === 'rfdiffusion') {
     refreshRFModeOptions();
+  } else {
+    rfModeOptions.empty();
+    resyncBoltzProtocol();
+    formGroup('pdb_structure').hide();
   }
 });
