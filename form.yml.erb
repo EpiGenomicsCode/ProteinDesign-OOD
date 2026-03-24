@@ -12,33 +12,35 @@ form:
   - bc_email_on_started
   # ── RFdiffusion ──────────────────────────────────────────────────────────
   - design_mode
-  - pdb_structure
-  - num_designs
-  - length_min
-  - length_max
-  # Binder mode fields (UI built by form.js; declared here so context.* works)
-  - binder_length_min
-  - binder_length_max
+  # Binder Design fields
   - target_chain
   - target_res_range
   - hotspot_res
+  - binder_length_min
+  - binder_length_max
   - noise_scale
-  # Scaffold mode fields
+  # Motif Scaffolding fields
   - motif_chain
-  - nterm_min
-  - nterm_max
   - motif_res_start
   - motif_res_end
+  - nterm_min
+  - nterm_max
   - cterm_min
   - cterm_max
   - scaffold_model
-  # Partial diffusion fields
+  # Partial Diffusion fields
   - struct_length
-  - partial_T
-  # Symmetric mode fields
-  - sym_total_length
+  - partial_t
+  # Unconditional Generation fields
+  - length_min
+  - length_max
+  # Symmetric Design fields
   - symmetry
+  - sym_total_length
   - use_olig_contacts
+  # Common RFdiffusion fields
+  - pdb_structure
+  - num_designs
   # ── BoltzGen ─────────────────────────────────────────────────────────────
   - boltz_protocol
   - boltz_target_file
@@ -63,8 +65,35 @@ attributes:
     help: "Select the protein design tool to use"
     widget: select
     options:
-      # When RFdiffusion is selected: hide ALL BoltzGen fields
+      # rfdiffusion: hide all BoltzGen fields; show all RFdiffusion fields.
+      # The data-hide-X: false rules here ensure mode-specific fields become
+      # visible when switching back from BoltzGen. design_mode's rules then
+      # hide whichever fields don't belong to the current mode (triggered by form.js).
       - ["RFdiffusion — diffusion-based de novo design", "rfdiffusion",
+         data-hide-design-mode: false,
+         data-hide-pdb-structure: false,
+         data-hide-num-designs: false,
+         data-hide-target-chain: false,
+         data-hide-target-res-range: false,
+         data-hide-hotspot-res: false,
+         data-hide-binder-length-min: false,
+         data-hide-binder-length-max: false,
+         data-hide-noise-scale: false,
+         data-hide-motif-chain: false,
+         data-hide-motif-res-start: false,
+         data-hide-motif-res-end: false,
+         data-hide-nterm-min: false,
+         data-hide-nterm-max: false,
+         data-hide-cterm-min: false,
+         data-hide-cterm-max: false,
+         data-hide-scaffold-model: false,
+         data-hide-struct-length: false,
+         data-hide-partial-t: false,
+         data-hide-length-min: false,
+         data-hide-length-max: false,
+         data-hide-symmetry: false,
+         data-hide-sym-total-length: false,
+         data-hide-use-olig-contacts: false,
          data-hide-boltz-protocol: true,
          data-hide-boltz-target-file: true,
          data-hide-boltz-target-chain: true,
@@ -77,20 +106,34 @@ attributes:
          data-hide-boltz-small-mol-id: true,
          data-hide-boltz-design-mask: true,
          data-hide-boltz-steps: true,
-         data-hide-boltz-reuse: true,
-         data-hide-design-mode: false,
-         data-hide-pdb-structure: false,
-         data-hide-num-designs: false,
-         data-hide-length-min: true,
-         data-hide-length-max: true]
-      # When BoltzGen is selected: hide ALL RFdiffusion-specific fields;
-      # hide small-mol and design-mask by default (protocol will reveal them)
+         data-hide-boltz-reuse: true]
+      # boltzgen: hide all RFdiffusion fields (mode-specific + common).
+      # BoltzGen field visibility is controlled by boltz_protocol's data-hide rules.
       - ["BoltzGen — universal binder design", "boltzgen",
          data-hide-design-mode: true,
          data-hide-pdb-structure: true,
          data-hide-num-designs: true,
+         data-hide-target-chain: true,
+         data-hide-target-res-range: true,
+         data-hide-hotspot-res: true,
+         data-hide-binder-length-min: true,
+         data-hide-binder-length-max: true,
+         data-hide-noise-scale: true,
+         data-hide-motif-chain: true,
+         data-hide-motif-res-start: true,
+         data-hide-motif-res-end: true,
+         data-hide-nterm-min: true,
+         data-hide-nterm-max: true,
+         data-hide-cterm-min: true,
+         data-hide-cterm-max: true,
+         data-hide-scaffold-model: true,
+         data-hide-struct-length: true,
+         data-hide-partial-t: true,
          data-hide-length-min: true,
          data-hide-length-max: true,
+         data-hide-symmetry: true,
+         data-hide-sym-total-length: true,
+         data-hide-use-olig-contacts: true,
          data-hide-boltz-protocol: false,
          data-hide-boltz-target-file: false,
          data-hide-boltz-target-chain: false,
@@ -130,26 +173,285 @@ attributes:
     help: "Select the RFdiffusion design mode"
     widget: select
     options:
+      # Each option hides all fields that do NOT belong to that mode.
+      # Fields for the current mode have no rule (they stay visible because
+      # app_type=rfdiffusion already showed them via data-hide-X: false).
       - ["Binder Design", "binder",
-         data-hide-pdb-structure: false,
+         data-hide-motif-chain: true,
+         data-hide-motif-res-start: true,
+         data-hide-motif-res-end: true,
+         data-hide-nterm-min: true,
+         data-hide-nterm-max: true,
+         data-hide-cterm-min: true,
+         data-hide-cterm-max: true,
+         data-hide-scaffold-model: true,
+         data-hide-struct-length: true,
+         data-hide-partial-t: true,
          data-hide-length-min: true,
-         data-hide-length-max: true]
+         data-hide-length-max: true,
+         data-hide-symmetry: true,
+         data-hide-sym-total-length: true,
+         data-hide-use-olig-contacts: true]
       - ["Motif Scaffolding", "scaffold",
-         data-hide-pdb-structure: false,
+         data-hide-target-chain: true,
+         data-hide-target-res-range: true,
+         data-hide-hotspot-res: true,
+         data-hide-binder-length-min: true,
+         data-hide-binder-length-max: true,
+         data-hide-noise-scale: true,
+         data-hide-struct-length: true,
+         data-hide-partial-t: true,
          data-hide-length-min: true,
-         data-hide-length-max: true]
+         data-hide-length-max: true,
+         data-hide-symmetry: true,
+         data-hide-sym-total-length: true,
+         data-hide-use-olig-contacts: true]
       - ["Partial Diffusion", "partial",
-         data-hide-pdb-structure: false,
+         data-hide-target-chain: true,
+         data-hide-target-res-range: true,
+         data-hide-hotspot-res: true,
+         data-hide-binder-length-min: true,
+         data-hide-binder-length-max: true,
+         data-hide-noise-scale: true,
+         data-hide-motif-chain: true,
+         data-hide-motif-res-start: true,
+         data-hide-motif-res-end: true,
+         data-hide-nterm-min: true,
+         data-hide-nterm-max: true,
+         data-hide-cterm-min: true,
+         data-hide-cterm-max: true,
+         data-hide-scaffold-model: true,
          data-hide-length-min: true,
-         data-hide-length-max: true]
+         data-hide-length-max: true,
+         data-hide-symmetry: true,
+         data-hide-sym-total-length: true,
+         data-hide-use-olig-contacts: true]
       - ["Unconditional Generation", "unconditional",
-         data-hide-pdb-structure: false,
-         data-hide-length-min: false,
-         data-hide-length-max: false]
+         data-hide-target-chain: true,
+         data-hide-target-res-range: true,
+         data-hide-hotspot-res: true,
+         data-hide-binder-length-min: true,
+         data-hide-binder-length-max: true,
+         data-hide-noise-scale: true,
+         data-hide-motif-chain: true,
+         data-hide-motif-res-start: true,
+         data-hide-motif-res-end: true,
+         data-hide-nterm-min: true,
+         data-hide-nterm-max: true,
+         data-hide-cterm-min: true,
+         data-hide-cterm-max: true,
+         data-hide-scaffold-model: true,
+         data-hide-struct-length: true,
+         data-hide-partial-t: true,
+         data-hide-symmetry: true,
+         data-hide-sym-total-length: true,
+         data-hide-use-olig-contacts: true]
       - ["Symmetric Design", "symmetric",
-         data-hide-pdb-structure: false,
+         data-hide-target-chain: true,
+         data-hide-target-res-range: true,
+         data-hide-hotspot-res: true,
+         data-hide-binder-length-min: true,
+         data-hide-binder-length-max: true,
+         data-hide-noise-scale: true,
+         data-hide-motif-chain: true,
+         data-hide-motif-res-start: true,
+         data-hide-motif-res-end: true,
+         data-hide-nterm-min: true,
+         data-hide-nterm-max: true,
+         data-hide-cterm-min: true,
+         data-hide-cterm-max: true,
+         data-hide-scaffold-model: true,
+         data-hide-struct-length: true,
+         data-hide-partial-t: true,
          data-hide-length-min: true,
          data-hide-length-max: true]
+
+  # ── RFdiffusion: Binder Design ────────────────────────────────────────────
+
+  target_chain:
+    widget: text_field
+    label: "Target Chain ID"
+    help: "Chain letter in your PDB for the target protein (e.g. <code>A</code>)."
+    placeholder: "e.g. A"
+    required: true
+
+  target_res_range:
+    widget: text_field
+    label: "Target Residue Range (optional)"
+    help: "Residues to include as target, in PDB numbering (e.g. <code>1-150</code>). Leave blank to use the entire chain."
+    placeholder: "e.g. 1-150"
+
+  hotspot_res:
+    widget: text_field
+    label: "Hotspot Residues (strongly recommended)"
+    help: "Key residues on the target that should drive binding — chain letter + residue number, comma-separated (e.g. <code>A59,A83,A91</code>). Omitting hotspots significantly reduces success rate."
+    placeholder: "e.g. A59,A83,A91"
+
+  binder_length_min:
+    widget: number_field
+    label: "Binder Min Length (residues)"
+    help: "Minimum length of the designed binder. Typical range: 50–150."
+    min: 20
+    max: 400
+    value: 70
+
+  binder_length_max:
+    widget: number_field
+    label: "Binder Max Length (residues)"
+    help: "Maximum length (exact length is randomly sampled each design)."
+    min: 20
+    max: 400
+    value: 100
+
+  noise_scale:
+    widget: select
+    label: "Noise Scale"
+    help: "Lower noise improves design quality at the cost of diversity. Recommended: Zero noise for binder design."
+    options:
+      - ["Zero noise — maximum quality (recommended)", "0"]
+      - ["Reduced noise — balanced (0.5)", "0.5"]
+      - ["Standard noise — maximum diversity (1.0)", "1.0"]
+    value: "0"
+
+  # ── RFdiffusion: Motif Scaffolding ────────────────────────────────────────
+
+  motif_chain:
+    widget: text_field
+    label: "Motif Chain ID"
+    help: "Chain letter containing the functional motif to preserve (e.g. <code>A</code>)."
+    placeholder: "e.g. A"
+    required: true
+
+  motif_res_start:
+    widget: number_field
+    label: "Motif Start Residue"
+    help: "First residue of the motif in PDB numbering (e.g. <code>163</code>)."
+    min: 1
+    placeholder: "e.g. 163"
+    required: true
+
+  motif_res_end:
+    widget: number_field
+    label: "Motif End Residue"
+    help: "Last residue of the motif, inclusive (e.g. <code>181</code>)."
+    min: 1
+    placeholder: "e.g. 181"
+    required: true
+
+  nterm_min:
+    widget: number_field
+    label: "N-terminal Min (residues)"
+    help: "Minimum designed residues before the motif."
+    min: 0
+    max: 300
+    value: 10
+
+  nterm_max:
+    widget: number_field
+    label: "N-terminal Max (residues)"
+    help: "Maximum designed residues before the motif."
+    min: 0
+    max: 300
+    value: 40
+
+  cterm_min:
+    widget: number_field
+    label: "C-terminal Min (residues)"
+    help: "Minimum designed residues after the motif."
+    min: 0
+    max: 300
+    value: 10
+
+  cterm_max:
+    widget: number_field
+    label: "C-terminal Max (residues)"
+    help: "Maximum designed residues after the motif."
+    min: 0
+    max: 300
+    value: 40
+
+  scaffold_model:
+    widget: select
+    label: "Checkpoint"
+    help: "Use <strong>Active Site</strong> for tiny/sparse motifs (1–3 residues or catalytic triads). Use <strong>Standard</strong> for larger contiguous motifs."
+    options:
+      - ["Standard — for contiguous motifs (Base model)", "base"]
+      - ["Active Site — for small/sparse catalytic motifs", "active_site"]
+    value: "base"
+
+  # ── RFdiffusion: Partial Diffusion ────────────────────────────────────────
+
+  struct_length:
+    widget: number_field
+    label: "Total Structure Length (residues)"
+    help: "Total residue count in your input PDB (all chains combined). <strong>This must match exactly.</strong> Open your PDB in a viewer and count residues, or run <code>grep -c \"^ATOM\" yourfile.pdb</code>."
+    min: 1
+    placeholder: "e.g. 79"
+    required: true
+
+  partial_t:
+    widget: number_field
+    label: "Noise Steps"
+    help: "How many diffusion steps to apply (1–50). Lower = more conservative changes, closer to input. Recommended: <strong>10</strong> (~20% noise). Use 20–40 for larger changes."
+    min: 1
+    max: 50
+    value: 10
+    required: true
+
+  # ── RFdiffusion: Unconditional Generation ─────────────────────────────────
+
+  length_min:
+    widget: number_field
+    label: "Min Protein Length (residues)"
+    help: "Minimum length of the generated protein."
+    min: 50
+    max: 800
+    value: 100
+    required: true
+
+  length_max:
+    widget: number_field
+    label: "Max Protein Length (residues)"
+    help: "Maximum length (exact length is randomly sampled each design). Proteins up to ~300 residues are typical."
+    min: 50
+    max: 800
+    value: 200
+    required: true
+
+  # ── RFdiffusion: Symmetric Design ─────────────────────────────────────────
+
+  symmetry:
+    widget: select
+    label: "Symmetry Type"
+    help: "The cyclic (Cn) or dihedral (Dn) symmetry of the designed oligomer. Tetrahedral/Octahedral/Icosahedral generate 12/24/60-mers."
+    options:
+      - ["C2 — homodimer (2-fold)", "C2"]
+      - ["C3 — homotrimer (3-fold)", "C3"]
+      - ["C4 — homotetramer (4-fold)", "C4"]
+      - ["C5 — homopentamer (5-fold)", "C5"]
+      - ["C6 — homohexamer (6-fold)", "C6"]
+      - ["D2 — dihedral (4 chains)", "D2"]
+      - ["D3 — dihedral (6 chains)", "D3"]
+      - ["Tetrahedral (12 chains)", "tetrahedral"]
+      - ["Octahedral (24 chains)", "octahedral"]
+      - ["Icosahedral (60 chains)", "icosahedral"]
+    value: "C3"
+
+  sym_total_length:
+    widget: number_field
+    label: "Total Assembly Length (residues)"
+    help: "Total residues across <em>all subunits combined</em>. Must be evenly divisible by the number of chains (e.g. for C6 with 80 residues per chain: enter <code>480</code>)."
+    min: 50
+    max: 10000
+    value: 300
+    required: true
+
+  use_olig_contacts:
+    widget: check_box
+    label: "Apply oligomer contact potential (recommended)"
+    help: "Guides chains to form both intra- and inter-chain contacts during diffusion. Strongly recommended for oligomer design."
+
+  # ── RFdiffusion: Common ───────────────────────────────────────────────────
 
   pdb_structure:
     widget: path_selector
@@ -168,102 +470,6 @@ attributes:
     value: 10
     required: true
 
-  length_min:
-    widget: number_field
-    label: "Min Length (residues)"
-    help: "Minimum length of the de novo generated protein (unconditional mode only)"
-    min: 50
-    max: 500
-    value: 100
-
-  length_max:
-    widget: number_field
-    label: "Max Length (residues)"
-    help: "Maximum length of the de novo generated protein (unconditional mode only)"
-    min: 50
-    max: 500
-    value: 200
-
-  # ── RFdiffusion mode-specific fields (UI injected by form.js) ────────────
-  # Declared here so context.* is available in before.sh.erb.
-  # form.js creates visible inputs with the same names that override these.
-
-  binder_length_min:
-    widget: hidden_field
-    value: "70"
-
-  binder_length_max:
-    widget: hidden_field
-    value: "100"
-
-  target_chain:
-    widget: hidden_field
-    value: "A"
-
-  target_res_range:
-    widget: hidden_field
-    value: ""
-
-  hotspot_res:
-    widget: hidden_field
-    value: ""
-
-  noise_scale:
-    widget: hidden_field
-    value: "1"
-
-  motif_chain:
-    widget: hidden_field
-    value: "A"
-
-  nterm_min:
-    widget: hidden_field
-    value: "10"
-
-  nterm_max:
-    widget: hidden_field
-    value: "40"
-
-  motif_res_start:
-    widget: hidden_field
-    value: "1"
-
-  motif_res_end:
-    widget: hidden_field
-    value: "20"
-
-  cterm_min:
-    widget: hidden_field
-    value: "10"
-
-  cterm_max:
-    widget: hidden_field
-    value: "40"
-
-  scaffold_model:
-    widget: hidden_field
-    value: "base"
-
-  struct_length:
-    widget: hidden_field
-    value: "100"
-
-  partial_T:
-    widget: hidden_field
-    value: "20"
-
-  sym_total_length:
-    widget: hidden_field
-    value: "300"
-
-  symmetry:
-    widget: hidden_field
-    value: "C3"
-
-  use_olig_contacts:
-    widget: hidden_field
-    value: "0"
-
   # ── BoltzGen ─────────────────────────────────────────────────────────────
 
   boltz_protocol:
@@ -271,7 +477,6 @@ attributes:
     help: "Design protocol — determines what molecule type to design and which pipeline steps run"
     widget: select
     options:
-      # Each option explicitly sets show/hide for all protocol-specific sub-fields
       - ["Protein binder (protein-anything)", "protein-anything",
          data-hide-boltz-small-mol-type: true,
          data-hide-boltz-small-mol-id: true,

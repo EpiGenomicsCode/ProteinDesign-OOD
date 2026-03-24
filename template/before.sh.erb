@@ -78,7 +78,7 @@ export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' ${CKPT_PARAM}"
 # Reference: examples/design_partialdiffusion.sh
 STRUCT_LEN="<%= context.struct_length.to_s.strip %>"
 CONTIGS="[${STRUCT_LEN}-${STRUCT_LEN}]"
-export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' diffuser.partial_T=<%= context.partial_T %>"
+export DIFFUSION_PARAMS="'contigmap.contigs=${CONTIGS}' diffuser.partial_T=<%= context.partial_t %>"
 
 <%- when 'unconditional' -%>
 # Unconditional Generation — input PDB is optional; the structure is loaded
